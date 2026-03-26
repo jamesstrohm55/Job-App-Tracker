@@ -6,6 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.application import Application, StageEnum
 from app.schemas.application import ApplicationCreate, ApplicationUpdate
+from app.services.timeline_service import auto_create_stage_event
 
 
 async def create_application(
@@ -92,12 +93,18 @@ async def update_application(
     if not app:
         return None
 
+    old_stage = app.stage
     update_data = data.model_dump(exclude_unset=True)
     for field, value in update_data.items():
         setattr(app, field, value)
     app.updated_at = datetime.now(timezone.utc)
 
     db.add(app)
+
+    # Auto-create timeline event on stage change
+    if "stage" in update_data and update_data["stage"] != old_stage:
+        await auto_create_stage_event(app_id, update_data["stage"], db)
+
     await db.flush()
     await db.refresh(app)
     return app
@@ -206,6 +213,11 @@ async def move_application(
     app.stage_order = new_order
     app.updated_at = datetime.now(timezone.utc)
     db.add(app)
+
+    # Auto-create timeline event when stage changes via board drag
+    if old_stage != new_stage:
+        await auto_create_stage_event(app_id, new_stage.value, db)
+
     await db.flush()
     await db.refresh(app)
     return app
