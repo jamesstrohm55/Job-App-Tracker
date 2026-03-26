@@ -24,31 +24,36 @@ export function KanbanColumn({
   return (
     <div
       className={cn(
-        "flex w-72 shrink-0 flex-col rounded-lg border border-border bg-muted/50 transition-colors",
+        "flex w-56 shrink-0 flex-col rounded-lg border border-border bg-muted/40 transition-colors",
         isOver && "border-primary/50 bg-muted"
       )}
     >
-      <div className="flex items-center justify-between p-3">
-        <div className="flex items-center gap-2">
+      {/* Header */}
+      <div className="flex items-center justify-between px-2 py-1.5 border-b border-border/50">
+        <div className="flex items-center gap-1.5">
           <span
             className={cn(
-              "rounded-md px-2 py-0.5 text-xs font-medium",
+              "rounded px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide",
               STAGE_COLORS[stage]
             )}
           >
             {STAGE_LABELS[stage]}
           </span>
-          <span className="text-xs text-muted-foreground">{applications.length}</span>
+          <span className="text-[10px] text-muted-foreground font-medium">{applications.length}</span>
         </div>
         <button
           onClick={onAddClick}
-          className="rounded-md p-1 text-muted-foreground hover:bg-accent hover:text-accent-foreground"
+          className="rounded p-0.5 text-muted-foreground hover:bg-accent hover:text-accent-foreground"
         >
-          <Plus className="h-4 w-4" />
+          <Plus className="h-3.5 w-3.5" />
         </button>
       </div>
 
-      <div ref={setNodeRef} className="flex min-h-[200px] flex-col gap-2 p-2">
+      {/* Cards */}
+      <div
+        ref={setNodeRef}
+        className="flex max-h-[calc(100vh-220px)] min-h-[80px] flex-col gap-1 overflow-y-auto p-1.5"
+      >
         <SortableContext
           items={applications.map((a) => a.id)}
           strategy={verticalListSortingStrategy}
@@ -63,8 +68,8 @@ export function KanbanColumn({
         </SortableContext>
 
         {applications.length === 0 && (
-          <p className="py-8 text-center text-xs text-muted-foreground">
-            Drop here or click + to add
+          <p className="py-6 text-center text-[10px] text-muted-foreground">
+            Drop here
           </p>
         )}
       </div>

@@ -1,4 +1,4 @@
-import { useState, useCallback, useMemo } from "react"
+import { useState, useCallback, useMemo, useRef } from "react"
 import {
   DndContext,
   DragOverlay,
@@ -26,11 +26,40 @@ interface KanbanBoardProps {
 
 export function KanbanBoard({ data, onMove, onAddClick, onCardClick }: KanbanBoardProps) {
   const [activeApp, setActiveApp] = useState<Application | null>(null)
+  const scrollRef = useRef<HTMLDivElement>(null)
+  const isPanning = useRef(false)
+  const panStart = useRef({ x: 0, scrollLeft: 0 })
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 8 } }),
     useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates })
   )
+
+  // Grab-to-pan scrolling
+  const handleMouseDown = useCallback((e: React.MouseEvent) => {
+    const el = scrollRef.current
+    if (!el) return
+    // Only pan when clicking the board background, not cards
+    if ((e.target as HTMLElement).closest("[data-kanban-card]")) return
+    isPanning.current = true
+    panStart.current = { x: e.clientX, scrollLeft: el.scrollLeft }
+    el.style.cursor = "grabbing"
+    el.style.userSelect = "none"
+  }, [])
+
+  const handleMouseMove = useCallback((e: React.MouseEvent) => {
+    if (!isPanning.current || !scrollRef.current) return
+    const dx = e.clientX - panStart.current.x
+    scrollRef.current.scrollLeft = panStart.current.scrollLeft - dx
+  }, [])
+
+  const handleMouseUp = useCallback(() => {
+    isPanning.current = false
+    if (scrollRef.current) {
+      scrollRef.current.style.cursor = "grab"
+      scrollRef.current.style.userSelect = ""
+    }
+  }, [])
 
   const columnMap = useMemo(() => {
     const map: Record<Stage, Application[]> = {} as Record<Stage, Application[]>
@@ -45,10 +74,7 @@ export function KanbanBoard({ data, onMove, onAddClick, onCardClick }: KanbanBoa
 
   const findContainer = useCallback(
     (id: string): Stage | null => {
-      // Check if it's a column ID
       if (STAGES.includes(id as Stage)) return id as Stage
-
-      // Find which column contains this application
       for (const stage of STAGES) {
         if (columnMap[stage].some((a) => a.id === id)) {
           return stage
@@ -83,7 +109,6 @@ export function KanbanBoard({ data, onMove, onAddClick, onCardClick }: KanbanBoa
 
       const activeContainer = findContainer(activeId)
 
-      // Determine target: if dropped over a column, use that column; if over another card, use its column
       let overContainer: Stage | null = null
       if (STAGES.includes(overId as Stage)) {
         overContainer = overId as Stage
@@ -93,20 +118,16 @@ export function KanbanBoard({ data, onMove, onAddClick, onCardClick }: KanbanBoa
 
       if (!activeContainer || !overContainer) return
 
-      // Calculate new order
       const overColumn = columnMap[overContainer]
       let newOrder: number
 
       if (STAGES.includes(overId as Stage)) {
-        // Dropped on empty column area — append to end
         newOrder = overColumn.length
       } else {
-        // Dropped on a specific card — insert at that card's position
         const overIndex = overColumn.findIndex((a) => a.id === overId)
         newOrder = overIndex >= 0 ? overIndex : overColumn.length
       }
 
-      // If same container and same position, skip
       if (activeContainer === overContainer) {
         const activeIndex = overColumn.findIndex((a) => a.id === activeId)
         if (activeIndex === newOrder) return
@@ -124,7 +145,15 @@ export function KanbanBoard({ data, onMove, onAddClick, onCardClick }: KanbanBoa
       onDragStart={handleDragStart}
       onDragEnd={handleDragEnd}
     >
-      <div className="flex gap-4 overflow-x-auto pb-4">
+      <div
+        ref={scrollRef}
+        className="flex gap-3 overflow-x-auto pb-2 cursor-grab select-none"
+        style={{ scrollbarWidth: "thin" }}
+        onMouseDown={handleMouseDown}
+        onMouseMove={handleMouseMove}
+        onMouseUp={handleMouseUp}
+        onMouseLeave={handleMouseUp}
+      >
         {STAGES.map((stage) => (
           <KanbanColumn
             key={stage}
@@ -138,7 +167,7 @@ export function KanbanBoard({ data, onMove, onAddClick, onCardClick }: KanbanBoa
 
       <DragOverlay>
         {activeApp && (
-          <div className="w-72">
+          <div className="w-56">
             <KanbanCard application={activeApp} />
           </div>
         )}

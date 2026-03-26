@@ -40,6 +40,8 @@ INTERVIEW_KEYWORDS = [
     "invited to interview", "next round",
     "2nd interview", "second interview", "final interview",
     "final round", "meet the team",
+    "skills assessment", "technical assessment", "online assessment",
+    "next steps", "next step with",
 ]
 
 REJECTION_KEYWORDS = [
@@ -97,7 +99,7 @@ OFFER_KEYWORDS = [
 JOB_KEYWORDS = (
     APPLICATION_CONFIRMED_KEYWORDS + INTERVIEW_KEYWORDS +
     REJECTION_KEYWORDS + OFFER_KEYWORDS + [
-        "application status", "next steps", "hiring process",
+        "application status", "hiring process",
         "recruitment", "position at", "role at", "opportunity at",
     ]
 )
@@ -286,17 +288,43 @@ def match_company(
     subject: str,
     snippet: str,
     tracked_companies: list[str],
-    threshold: int = 75,
+    threshold: int = 85,
 ) -> str | None:
+    """Match email content against tracked companies.
+
+    Uses word-boundary matching first (exact company name appears in text),
+    then falls back to fuzzy matching with a high threshold.
+    """
     text = f"{from_address} {subject} {snippet}".lower()
     best_match: str | None = None
     best_score = 0
 
     for company in tracked_companies:
-        score = fuzz.partial_ratio(company.lower(), text)
-        if score > best_score and score >= threshold:
-            best_score = score
-            best_match = company
+        company_lower = company.lower()
+
+        # Tier 1: Exact substring match (case-insensitive)
+        if company_lower in text:
+            # Prefer longer exact matches
+            if len(company) > len(best_match or ""):
+                best_match = company
+                best_score = 100
+            continue
+
+        # Tier 2: Fuzzy match — but only use token_set_ratio for multi-word
+        # company names, and require high threshold to avoid false positives
+        if best_score < 100:
+            if len(company_lower.split()) > 1:
+                score = fuzz.token_set_ratio(company_lower, text)
+            else:
+                # For single-word companies, require very high match
+                # Check each word in the text individually
+                score = max(
+                    (fuzz.ratio(company_lower, word) for word in text.split()),
+                    default=0,
+                )
+            if score > best_score and score >= threshold:
+                best_score = score
+                best_match = company
 
     return best_match
 

@@ -27,6 +27,7 @@ export interface EmailSyncResponse {
   auto_created: number
   stage_updates: number
   timeline_events: number
+  sync_duration_seconds: number
 }
 
 export interface EmailSuggestion {
@@ -90,4 +91,9 @@ export async function linkEmail(emailId: string, applicationId: string): Promise
 
 export async function unlinkEmail(emailId: string): Promise<void> {
   await api.patch(`/emails/${emailId}/unlink`)
+}
+
+export async function trashRejectionEmails(): Promise<{ trashed: number }> {
+  const { data } = await api.post<{ trashed: number }>("/emails/trash-rejections")
+  return data
 }

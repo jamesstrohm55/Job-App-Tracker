@@ -1,13 +1,14 @@
 import { format } from "date-fns"
-import { Mail, RefreshCw, Unplug } from "lucide-react"
+import { Mail, RefreshCw, Trash2, Unplug } from "lucide-react"
 import { Button } from "@/components/ui/button"
-import { useGmailStatus, useDisconnectGmail, useSyncEmails } from "@/hooks/use-emails"
+import { useGmailStatus, useDisconnectGmail, useSyncEmails, useTrashRejectionEmails } from "@/hooks/use-emails"
 import { getGmailAuthUrl } from "@/api/emails"
 
 export function SettingsPage() {
   const { data: status, isLoading } = useGmailStatus()
   const disconnectGmail = useDisconnectGmail()
   const syncEmails = useSyncEmails()
+  const trashRejections = useTrashRejectionEmails()
 
   const handleConnectGmail = async () => {
     try {
@@ -69,6 +70,19 @@ export function SettingsPage() {
                 size="sm"
                 variant="outline"
                 onClick={() => {
+                  if (confirm("Trash all emails linked to rejected applications in Gmail? This moves them to Gmail's trash (auto-deleted after 30 days).")) {
+                    trashRejections.mutate()
+                  }
+                }}
+                disabled={trashRejections.isPending}
+              >
+                <Trash2 className="h-4 w-4" />
+                {trashRejections.isPending ? "Trashing..." : "Trash Rejections"}
+              </Button>
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => {
                   if (confirm("Disconnect Gmail? Your synced emails will remain.")) {
                     disconnectGmail.mutate()
                   }
@@ -79,9 +93,20 @@ export function SettingsPage() {
               </Button>
             </div>
 
+            {trashRejections.data && (
+              <p className="text-sm text-muted-foreground">
+                Moved {trashRejections.data.trashed} rejection email(s) to trash.
+              </p>
+            )}
+
             {syncEmails.data && (
               <div className="rounded-md bg-muted p-3 text-sm space-y-1">
-                <p><span className="font-medium">{syncEmails.data.new_emails}</span> new emails synced</p>
+                <div className="flex items-center justify-between">
+                  <p><span className="font-medium">{syncEmails.data.new_emails}</span> new emails synced</p>
+                  <span className="text-xs text-muted-foreground">
+                    {syncEmails.data.sync_duration_seconds}s
+                  </span>
+                </div>
                 {syncEmails.data.auto_created > 0 && (
                   <p><span className="font-medium">{syncEmails.data.auto_created}</span> applications auto-created</p>
                 )}

@@ -7,6 +7,7 @@ import {
   linkEmail,
   listEmails,
   syncEmails,
+  trashRejectionEmails,
   unlinkEmail,
 } from "@/api/emails"
 
@@ -92,6 +93,17 @@ export function useUnlinkEmail() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["emails"] })
       queryClient.invalidateQueries({ queryKey: ["email-suggestions"] })
+    },
+  })
+}
+
+export function useTrashRejectionEmails() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: () => trashRejectionEmails(),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["emails"] })
+      queryClient.invalidateQueries({ queryKey: ["gmail-status"] })
     },
   })
 }

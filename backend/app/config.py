@@ -20,6 +20,10 @@ class Settings(BaseSettings):
     gmail_redirect_uri: str = "http://localhost:5173/settings/gmail/callback"
     gmail_encryption_key: str = ""
 
+    # LLM (OpenRouter)
+    openrouter_api_key: str = ""
+    openrouter_model: str = "nvidia/llama-3.1-nemotron-70b-instruct"
+
     # App
     frontend_url: str = "http://localhost:5173"
     cors_origins: list[str] = ["http://localhost:5173"]

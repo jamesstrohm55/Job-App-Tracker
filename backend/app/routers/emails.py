@@ -26,6 +26,7 @@ from app.services.gmail_service import (
     get_gmail_auth_url,
     get_gmail_status,
     sync_emails,
+    trash_rejection_emails,
 )
 
 router = APIRouter(prefix="/emails", tags=["emails"])
@@ -78,8 +79,24 @@ async def sync(
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
+    import time
+    start = time.monotonic()
     try:
         result = await sync_emails(user.id, db)
+        result["sync_duration_seconds"] = round(time.monotonic() - start, 2)
+        return result
+    except ValueError as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+
+
+@router.post("/trash-rejections")
+async def trash_rejections(
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Move all emails linked to rejected applications to Gmail trash."""
+    try:
+        result = await trash_rejection_emails(user.id, db)
         return result
     except ValueError as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
