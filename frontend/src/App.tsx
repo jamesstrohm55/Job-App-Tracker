@@ -1,7 +1,9 @@
 import { BrowserRouter, Route, Routes } from "react-router-dom"
 import { GoogleOAuthProvider } from "@react-oauth/google"
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
+import { Toaster } from "sonner"
 import { useEffect } from "react"
+import { ErrorBoundary } from "./components/ui/error-boundary"
 import { AppShellWrapper } from "./app-shell-wrapper"
 import { LoginPage } from "./pages/login"
 import { useUIStore } from "./stores/ui-store"
@@ -25,16 +27,19 @@ export default function App() {
   }, [theme])
 
   return (
-    <GoogleOAuthProvider clientId={GOOGLE_CLIENT_ID}>
-      <QueryClientProvider client={queryClient}>
-        <BrowserRouter>
-          <Routes>
-            <Route path="/login" element={<LoginPageWrapper />} />
-            <Route path="/*" element={<AppShellWrapper />} />
-          </Routes>
-        </BrowserRouter>
-      </QueryClientProvider>
-    </GoogleOAuthProvider>
+    <ErrorBoundary>
+      <GoogleOAuthProvider clientId={GOOGLE_CLIENT_ID}>
+        <QueryClientProvider client={queryClient}>
+          <BrowserRouter>
+            <Routes>
+              <Route path="/login" element={<LoginPageWrapper />} />
+              <Route path="/*" element={<AppShellWrapper />} />
+            </Routes>
+          </BrowserRouter>
+          <Toaster position="bottom-right" richColors />
+        </QueryClientProvider>
+      </GoogleOAuthProvider>
+    </ErrorBoundary>
   )
 }
 

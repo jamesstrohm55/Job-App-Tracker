@@ -1,4 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
+import { toast } from "sonner"
 import type { Stage } from "@/lib/constants"
 import type { Application } from "@/types"
 import {
@@ -50,7 +51,9 @@ export function useCreateApplication() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["board"] })
       queryClient.invalidateQueries({ queryKey: ["applications"] })
+      toast.success("Application added")
     },
+    onError: () => toast.error("Failed to create application"),
   })
 }
 
@@ -63,7 +66,9 @@ export function useUpdateApplication() {
       queryClient.invalidateQueries({ queryKey: ["board"] })
       queryClient.invalidateQueries({ queryKey: ["applications"] })
       queryClient.invalidateQueries({ queryKey: ["application"] })
+      toast.success("Application updated")
     },
+    onError: () => toast.error("Failed to update application"),
   })
 }
 
@@ -74,7 +79,9 @@ export function useDeleteApplication() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["board"] })
       queryClient.invalidateQueries({ queryKey: ["applications"] })
+      toast.success("Application deleted")
     },
+    onError: () => toast.error("Failed to delete application"),
   })
 }
 
