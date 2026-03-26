@@ -1,7 +1,14 @@
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 
+from sqlalchemy import DateTime
 from sqlmodel import Field, SQLModel
+
+TZDateTime = DateTime(timezone=True)
+
+
+def _utcnow() -> datetime:
+    return datetime.now(timezone.utc)
 
 
 class EmailAccount(SQLModel, table=True):
@@ -11,7 +18,7 @@ class EmailAccount(SQLModel, table=True):
     user_id: uuid.UUID = Field(foreign_key="users.id", unique=True)
     email_address: str
     encrypted_refresh_token: bytes
-    last_sync_at: datetime | None = None
+    last_sync_at: datetime | None = Field(default=None, sa_type=TZDateTime)
     is_active: bool = Field(default=True)
-    created_at: datetime = Field(default_factory=datetime.utcnow)
-    updated_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=_utcnow, sa_type=TZDateTime)
+    updated_at: datetime = Field(default_factory=_utcnow, sa_type=TZDateTime)

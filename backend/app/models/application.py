@@ -1,8 +1,15 @@
 import enum
 import uuid
-from datetime import date, datetime
+from datetime import date, datetime, timezone
 
+from sqlalchemy import DateTime
 from sqlmodel import Field, SQLModel
+
+TZDateTime = DateTime(timezone=True)
+
+
+def _utcnow() -> datetime:
+    return datetime.now(timezone.utc)
 
 
 class StageEnum(str, enum.Enum):
@@ -39,8 +46,8 @@ class Application(SQLModel, table=True):
     notes: str | None = None
     applied_date: date | None = None
     is_archived: bool = Field(default=False)
-    created_at: datetime = Field(default_factory=datetime.utcnow)
-    updated_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=_utcnow, sa_type=TZDateTime)
+    updated_at: datetime = Field(default_factory=_utcnow, sa_type=TZDateTime)
 
 
 class ApplicationContact(SQLModel, table=True):

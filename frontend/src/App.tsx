@@ -1,12 +1,14 @@
-import { BrowserRouter, Route, Routes } from "react-router-dom"
+import { BrowserRouter, Route, Routes, useNavigate } from "react-router-dom"
 import { GoogleOAuthProvider } from "@react-oauth/google"
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
-import { Toaster } from "sonner"
+import { Toaster, toast } from "sonner"
 import { useEffect } from "react"
 import { ErrorBoundary } from "./components/ui/error-boundary"
 import { AppShellWrapper } from "./app-shell-wrapper"
 import { LoginPage } from "./pages/login"
 import { useUIStore } from "./stores/ui-store"
+import { loginWithGoogle } from "./api/auth"
+import { setAccessToken } from "./api/client"
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -44,8 +46,17 @@ export default function App() {
 }
 
 function LoginPageWrapper() {
+  const navigate = useNavigate()
+
   const handleGoogleLogin = async (credential: string) => {
-    console.log("Google login with credential:", credential.substring(0, 20) + "...")
+    try {
+      const result = await loginWithGoogle(credential)
+      setAccessToken(result.access_token)
+      localStorage.setItem("refresh_token", result.refresh_token)
+      navigate("/board")
+    } catch {
+      toast.error("Login failed. Please try again.")
+    }
   }
 
   return <LoginPage onGoogleLogin={handleGoogleLogin} />

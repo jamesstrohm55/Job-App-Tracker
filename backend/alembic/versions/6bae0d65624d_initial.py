@@ -1,8 +1,8 @@
 """initial
 
-Revision ID: 1e7765b5b85c
+Revision ID: 6bae0d65624d
 Revises: 
-Create Date: 2026-03-25 23:14:51.387453
+Create Date: 2026-03-25 23:55:09.532525
 
 """
 from typing import Sequence, Union
@@ -13,7 +13,7 @@ import sqlmodel
 
 
 # revision identifiers, used by Alembic.
-revision: str = '1e7765b5b85c'
+revision: str = '6bae0d65624d'
 down_revision: Union[str, None] = None
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
@@ -27,8 +27,8 @@ def upgrade() -> None:
     sa.Column('name', sqlmodel.sql.sqltypes.AutoString(), nullable=False),
     sa.Column('picture_url', sqlmodel.sql.sqltypes.AutoString(), nullable=True),
     sa.Column('google_sub', sqlmodel.sql.sqltypes.AutoString(), nullable=False),
-    sa.Column('created_at', sa.DateTime(), nullable=False),
-    sa.Column('updated_at', sa.DateTime(), nullable=False),
+    sa.Column('created_at', sa.DateTime(timezone=True), nullable=False),
+    sa.Column('updated_at', sa.DateTime(timezone=True), nullable=False),
     sa.PrimaryKeyConstraint('id')
     )
     op.create_index(op.f('ix_users_email'), 'users', ['email'], unique=True)
@@ -49,8 +49,8 @@ def upgrade() -> None:
     sa.Column('notes', sqlmodel.sql.sqltypes.AutoString(), nullable=True),
     sa.Column('applied_date', sa.Date(), nullable=True),
     sa.Column('is_archived', sa.Boolean(), nullable=False),
-    sa.Column('created_at', sa.DateTime(), nullable=False),
-    sa.Column('updated_at', sa.DateTime(), nullable=False),
+    sa.Column('created_at', sa.DateTime(timezone=True), nullable=False),
+    sa.Column('updated_at', sa.DateTime(timezone=True), nullable=False),
     sa.ForeignKeyConstraint(['user_id'], ['users.id'], ),
     sa.PrimaryKeyConstraint('id')
     )
@@ -66,8 +66,8 @@ def upgrade() -> None:
     sa.Column('company', sqlmodel.sql.sqltypes.AutoString(), nullable=True),
     sa.Column('linkedin_url', sqlmodel.sql.sqltypes.AutoString(), nullable=True),
     sa.Column('notes', sqlmodel.sql.sqltypes.AutoString(), nullable=True),
-    sa.Column('created_at', sa.DateTime(), nullable=False),
-    sa.Column('updated_at', sa.DateTime(), nullable=False),
+    sa.Column('created_at', sa.DateTime(timezone=True), nullable=False),
+    sa.Column('updated_at', sa.DateTime(timezone=True), nullable=False),
     sa.ForeignKeyConstraint(['user_id'], ['users.id'], ),
     sa.PrimaryKeyConstraint('id')
     )
@@ -77,10 +77,10 @@ def upgrade() -> None:
     sa.Column('user_id', sa.Uuid(), nullable=False),
     sa.Column('email_address', sqlmodel.sql.sqltypes.AutoString(), nullable=False),
     sa.Column('encrypted_refresh_token', sa.LargeBinary(), nullable=False),
-    sa.Column('last_sync_at', sa.DateTime(), nullable=True),
+    sa.Column('last_sync_at', sa.DateTime(timezone=True), nullable=True),
     sa.Column('is_active', sa.Boolean(), nullable=False),
-    sa.Column('created_at', sa.DateTime(), nullable=False),
-    sa.Column('updated_at', sa.DateTime(), nullable=False),
+    sa.Column('created_at', sa.DateTime(timezone=True), nullable=False),
+    sa.Column('updated_at', sa.DateTime(timezone=True), nullable=False),
     sa.ForeignKeyConstraint(['user_id'], ['users.id'], ),
     sa.PrimaryKeyConstraint('id'),
     sa.UniqueConstraint('user_id')
@@ -89,9 +89,9 @@ def upgrade() -> None:
     sa.Column('id', sa.Uuid(), nullable=False),
     sa.Column('user_id', sa.Uuid(), nullable=False),
     sa.Column('token_hash', sqlmodel.sql.sqltypes.AutoString(), nullable=False),
-    sa.Column('expires_at', sa.DateTime(), nullable=False),
-    sa.Column('revoked_at', sa.DateTime(), nullable=True),
-    sa.Column('created_at', sa.DateTime(), nullable=False),
+    sa.Column('expires_at', sa.DateTime(timezone=True), nullable=False),
+    sa.Column('revoked_at', sa.DateTime(timezone=True), nullable=True),
+    sa.Column('created_at', sa.DateTime(timezone=True), nullable=False),
     sa.ForeignKeyConstraint(['user_id'], ['users.id'], ),
     sa.PrimaryKeyConstraint('id')
     )
@@ -114,10 +114,10 @@ def upgrade() -> None:
     sa.Column('from_address', sqlmodel.sql.sqltypes.AutoString(), nullable=False),
     sa.Column('snippet', sqlmodel.sql.sqltypes.AutoString(), nullable=True),
     sa.Column('body_preview', sqlmodel.sql.sqltypes.AutoString(), nullable=True),
-    sa.Column('received_at', sa.DateTime(), nullable=False),
+    sa.Column('received_at', sa.DateTime(timezone=True), nullable=False),
     sa.Column('is_auto_linked', sa.Boolean(), nullable=False),
-    sa.Column('created_at', sa.DateTime(), nullable=False),
-    sa.Column('updated_at', sa.DateTime(), nullable=False),
+    sa.Column('created_at', sa.DateTime(timezone=True), nullable=False),
+    sa.Column('updated_at', sa.DateTime(timezone=True), nullable=False),
     sa.ForeignKeyConstraint(['application_id'], ['applications.id'], ),
     sa.ForeignKeyConstraint(['user_id'], ['users.id'], ),
     sa.PrimaryKeyConstraint('id')
@@ -133,9 +133,9 @@ def upgrade() -> None:
     sa.Column('event_type', sa.Enum('APPLIED', 'PHONE_SCREEN', 'TECHNICAL_INTERVIEW', 'BEHAVIORAL_INTERVIEW', 'ONSITE', 'TAKE_HOME', 'OFFER', 'REJECTION', 'WITHDRAWAL', 'FOLLOW_UP', 'OTHER', name='eventtypeenum'), nullable=False),
     sa.Column('title', sqlmodel.sql.sqltypes.AutoString(), nullable=False),
     sa.Column('description', sqlmodel.sql.sqltypes.AutoString(), nullable=True),
-    sa.Column('event_date', sa.DateTime(), nullable=False),
-    sa.Column('created_at', sa.DateTime(), nullable=False),
-    sa.Column('updated_at', sa.DateTime(), nullable=False),
+    sa.Column('event_date', sa.DateTime(timezone=True), nullable=False),
+    sa.Column('created_at', sa.DateTime(timezone=True), nullable=False),
+    sa.Column('updated_at', sa.DateTime(timezone=True), nullable=False),
     sa.ForeignKeyConstraint(['application_id'], ['applications.id'], ),
     sa.PrimaryKeyConstraint('id')
     )

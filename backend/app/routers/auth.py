@@ -29,11 +29,13 @@ async def google_auth_url():
 
 @router.post("/google", response_model=AuthResponse)
 async def google_auth(body: GoogleAuthRequest, db: AsyncSession = Depends(get_db)):
-    """Exchange Google authorization code for app tokens."""
+    """Verify Google ID token and return app tokens."""
     try:
-        result = await authenticate_google(body.code, db)
+        result = await authenticate_google(body.credential, db)
         return result
     except Exception as e:
+        import traceback
+        traceback.print_exc()
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=f"Google authentication failed: {e}",

@@ -1,8 +1,15 @@
 import enum
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 
+from sqlalchemy import DateTime
 from sqlmodel import Field, SQLModel
+
+TZDateTime = DateTime(timezone=True)
+
+
+def _utcnow() -> datetime:
+    return datetime.now(timezone.utc)
 
 
 class EventTypeEnum(str, enum.Enum):
@@ -27,6 +34,6 @@ class TimelineEvent(SQLModel, table=True):
     event_type: EventTypeEnum
     title: str
     description: str | None = None
-    event_date: datetime
-    created_at: datetime = Field(default_factory=datetime.utcnow)
-    updated_at: datetime = Field(default_factory=datetime.utcnow)
+    event_date: datetime = Field(sa_type=TZDateTime)
+    created_at: datetime = Field(default_factory=_utcnow, sa_type=TZDateTime)
+    updated_at: datetime = Field(default_factory=_utcnow, sa_type=TZDateTime)

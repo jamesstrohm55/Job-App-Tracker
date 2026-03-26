@@ -40,14 +40,10 @@ def get_google_auth_url() -> str:
     return auth_url
 
 
-async def authenticate_google(code: str, db: AsyncSession) -> dict:
-    """Exchange Google auth code for tokens, upsert user, return app tokens + user."""
-    flow = _build_google_flow()
-    flow.fetch_token(code=code)
-
-    credentials = flow.credentials
+async def authenticate_google(credential: str, db: AsyncSession) -> dict:
+    """Verify Google ID token (credential), upsert user, return app tokens + user."""
     id_info = id_token.verify_oauth2_token(
-        credentials.id_token,
+        credential,
         google_requests.Request(),
         settings.google_client_id,
     )

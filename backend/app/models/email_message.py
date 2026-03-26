@@ -1,7 +1,14 @@
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 
+from sqlalchemy import DateTime
 from sqlmodel import Field, SQLModel
+
+TZDateTime = DateTime(timezone=True)
+
+
+def _utcnow() -> datetime:
+    return datetime.now(timezone.utc)
 
 
 class EmailMessage(SQLModel, table=True):
@@ -16,7 +23,7 @@ class EmailMessage(SQLModel, table=True):
     from_address: str
     snippet: str | None = None
     body_preview: str | None = None
-    received_at: datetime = Field(index=True)
+    received_at: datetime = Field(index=True, sa_type=TZDateTime)
     is_auto_linked: bool = Field(default=False)
-    created_at: datetime = Field(default_factory=datetime.utcnow)
-    updated_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=_utcnow, sa_type=TZDateTime)
+    updated_at: datetime = Field(default_factory=_utcnow, sa_type=TZDateTime)

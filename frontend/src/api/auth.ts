@@ -1,8 +1,8 @@
 import api from "@/api/client"
 import type { AuthResponse, User } from "@/types"
 
-export async function loginWithGoogle(code: string): Promise<AuthResponse> {
-  const { data } = await api.post<AuthResponse>("/auth/google", { code })
+export async function loginWithGoogle(credential: string): Promise<AuthResponse> {
+  const { data } = await api.post<AuthResponse>("/auth/google", { credential })
   return data
 }
 
