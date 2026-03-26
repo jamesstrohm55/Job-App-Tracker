@@ -29,6 +29,8 @@ import {
   useUnlinkContact,
 } from "@/hooks/use-contacts"
 import { useTimelineEvents, useCreateTimelineEvent, useDeleteTimelineEvent } from "@/hooks/use-timeline"
+import { useEmails, useUnlinkEmail } from "@/hooks/use-emails"
+import { format } from "date-fns"
 import { STAGES, STAGE_LABELS, STAGE_COLORS } from "@/lib/constants"
 import { cn } from "@/lib/utils"
 
@@ -51,12 +53,16 @@ export function ApplicationDetailPage() {
   const createEvent = useCreateTimelineEvent()
   const deleteEvent = useDeleteTimelineEvent()
 
+  // Emails
+  const { data: emailData } = useEmails({ application_id: id! })
+  const unlinkEmail = useUnlinkEmail()
+
   // UI state
   const [editOpen, setEditOpen] = useState(false)
   const [contactFormOpen, setContactFormOpen] = useState(false)
   const [linkDialogOpen, setLinkDialogOpen] = useState(false)
   const [eventFormOpen, setEventFormOpen] = useState(false)
-  const [activeTab, setActiveTab] = useState<"details" | "timeline" | "contacts">("details")
+  const [activeTab, setActiveTab] = useState<"details" | "timeline" | "contacts" | "emails">("details")
 
   if (isLoading) {
     return <p className="text-muted-foreground">Loading...</p>
@@ -113,6 +119,7 @@ export function ApplicationDetailPage() {
     { key: "details" as const, label: "Details" },
     { key: "timeline" as const, label: `Timeline (${events?.length ?? 0})` },
     { key: "contacts" as const, label: `Contacts (${linkedContacts?.length ?? 0})` },
+    { key: "emails" as const, label: `Emails (${emailData?.total ?? 0})` },
   ]
 
   return (
@@ -278,6 +285,45 @@ export function ApplicationDetailPage() {
               unlinkContact.mutate({ appId: id!, contactId })
             }
           />
+        </div>
+      )}
+
+      {activeTab === "emails" && (
+        <div className="space-y-2">
+          {!emailData?.items.length ? (
+            <p className="py-4 text-center text-sm text-muted-foreground">
+              No emails linked to this application.
+            </p>
+          ) : (
+            emailData.items.map((email) => (
+              <div
+                key={email.id}
+                className="flex items-center gap-4 rounded-lg border border-border p-3"
+              >
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-sm font-medium">{email.subject}</p>
+                  <p className="truncate text-xs text-muted-foreground">{email.from_address}</p>
+                  {email.snippet && (
+                    <p className="mt-1 truncate text-xs text-muted-foreground">{email.snippet}</p>
+                  )}
+                </div>
+                <div className="flex shrink-0 items-center gap-2">
+                  <span className="text-xs text-muted-foreground">
+                    {format(new Date(email.received_at), "MMM d")}
+                  </span>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-7 w-7"
+                    onClick={() => unlinkEmail.mutate(email.id)}
+                    title="Unlink"
+                  >
+                    <Link2 className="h-3.5 w-3.5" />
+                  </Button>
+                </div>
+              </div>
+            ))
+          )}
         </div>
       )}
 
