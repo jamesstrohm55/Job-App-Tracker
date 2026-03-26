@@ -11,10 +11,14 @@ class GmailConnectRequest(BaseModel):
 class EmailSyncResponse(BaseModel):
     new_emails: int
     auto_linked: int
-    suggestions: int
+    auto_created: int = 0
+    stage_updates: int = 0
+    timeline_events: int = 0
 
 
 class EmailMessageResponse(BaseModel):
+    model_config = {"from_attributes": True}
+
     id: uuid.UUID
     user_id: uuid.UUID
     application_id: uuid.UUID | None

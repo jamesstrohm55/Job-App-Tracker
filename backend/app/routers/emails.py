@@ -46,6 +46,8 @@ async def connect(
         account = await connect_gmail(body.code, user.id, db)
         return {"ok": True, "email_address": account.email_address}
     except Exception as e:
+        import traceback
+        traceback.print_exc()
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=f"Gmail connection failed: {e}",

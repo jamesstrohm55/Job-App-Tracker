@@ -17,6 +17,7 @@ class Settings(BaseSettings):
     google_redirect_uri: str = "http://localhost:5173/auth/google/callback"
 
     # Gmail
+    gmail_redirect_uri: str = "http://localhost:5173/settings/gmail/callback"
     gmail_encryption_key: str = ""
 
     # App

@@ -80,11 +80,21 @@ export function SettingsPage() {
             </div>
 
             {syncEmails.data && (
-              <p className="text-sm text-muted-foreground">
-                Synced {syncEmails.data.new_emails} new emails,{" "}
-                {syncEmails.data.auto_linked} auto-linked,{" "}
-                {syncEmails.data.suggestions} suggestions.
-              </p>
+              <div className="rounded-md bg-muted p-3 text-sm space-y-1">
+                <p><span className="font-medium">{syncEmails.data.new_emails}</span> new emails synced</p>
+                {syncEmails.data.auto_created > 0 && (
+                  <p><span className="font-medium">{syncEmails.data.auto_created}</span> applications auto-created</p>
+                )}
+                {syncEmails.data.auto_linked > 0 && (
+                  <p><span className="font-medium">{syncEmails.data.auto_linked}</span> emails auto-linked</p>
+                )}
+                {syncEmails.data.stage_updates > 0 && (
+                  <p><span className="font-medium">{syncEmails.data.stage_updates}</span> application stages updated</p>
+                )}
+                {syncEmails.data.timeline_events > 0 && (
+                  <p><span className="font-medium">{syncEmails.data.timeline_events}</span> timeline events added</p>
+                )}
+              </div>
             )}
           </div>
         ) : (

@@ -24,7 +24,9 @@ export interface EmailListResponse {
 export interface EmailSyncResponse {
   new_emails: number
   auto_linked: number
-  suggestions: number
+  auto_created: number
+  stage_updates: number
+  timeline_events: number
 }
 
 export interface EmailSuggestion {

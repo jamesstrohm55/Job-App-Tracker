@@ -21,6 +21,8 @@ class TimelineEventUpdate(BaseModel):
 
 
 class TimelineEventResponse(BaseModel):
+    model_config = {"from_attributes": True}
+
     id: uuid.UUID
     application_id: uuid.UUID
     event_type: EventTypeEnum

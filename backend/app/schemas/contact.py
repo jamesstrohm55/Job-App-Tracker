@@ -25,6 +25,8 @@ class ContactUpdate(BaseModel):
 
 
 class ContactResponse(BaseModel):
+    model_config = {"from_attributes": True}
+
     id: uuid.UUID
     user_id: uuid.UUID
     name: str

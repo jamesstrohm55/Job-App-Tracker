@@ -64,6 +64,11 @@ export function useSyncEmails() {
       queryClient.invalidateQueries({ queryKey: ["emails"] })
       queryClient.invalidateQueries({ queryKey: ["email-suggestions"] })
       queryClient.invalidateQueries({ queryKey: ["gmail-status"] })
+      // Sync may auto-create apps and update stages
+      queryClient.invalidateQueries({ queryKey: ["board"] })
+      queryClient.invalidateQueries({ queryKey: ["applications"] })
+      queryClient.invalidateQueries({ queryKey: ["analytics"] })
+      queryClient.invalidateQueries({ queryKey: ["timeline"] })
     },
   })
 }

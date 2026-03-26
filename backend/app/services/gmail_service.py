@@ -3,6 +3,7 @@
 import uuid
 from datetime import datetime, timezone
 
+from thefuzz import fuzz
 from google.auth.transport.requests import Request as GoogleRequest
 from google.oauth2.credentials import Credentials
 from google_auth_oauthlib.flow import Flow
@@ -11,9 +12,10 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
-from app.models.application import Application
+from app.models.application import Application, StageEnum
 from app.models.email_account import EmailAccount
 from app.models.email_message import EmailMessage
+from app.models.timeline_event import EventTypeEnum, TimelineEvent
 from app.services.email_parser import classify_email
 from app.services.encryption import decrypt_token, encrypt_token
 from app.utils.gmail_queries import build_job_email_query
@@ -28,11 +30,11 @@ def _build_gmail_flow() -> Flow:
             "client_secret": settings.google_client_secret,
             "auth_uri": "https://accounts.google.com/o/oauth2/auth",
             "token_uri": "https://oauth2.googleapis.com/token",
-            "redirect_uris": [settings.google_redirect_uri],
+            "redirect_uris": [settings.gmail_redirect_uri],
         }
     }
     flow = Flow.from_client_config(client_config, scopes=GMAIL_SCOPES)
-    flow.redirect_uri = settings.google_redirect_uri
+    flow.redirect_uri = settings.gmail_redirect_uri
     return flow
 
 
@@ -48,6 +50,8 @@ def get_gmail_auth_url() -> str:
 
 async def connect_gmail(code: str, user_id: uuid.UUID, db: AsyncSession) -> EmailAccount:
     """Exchange Gmail OAuth code for credentials and store encrypted refresh token."""
+    import os
+    os.environ["OAUTHLIB_RELAX_TOKEN_SCOPE"] = "1"
     flow = _build_gmail_flow()
     flow.fetch_token(code=code)
     credentials = flow.credentials
@@ -161,7 +165,9 @@ async def sync_emails(
 
     new_count = 0
     auto_linked = 0
-    suggestions = 0
+    auto_created = 0
+    stage_updates = 0
+    timeline_events = 0
 
     for msg_id in message_ids:
         # Skip if already stored
@@ -190,10 +196,15 @@ async def sync_emails(
         # Classify the email
         classification = classify_email(from_address, subject, snippet, tracked_companies)
 
-        # Determine if we should auto-link
+        if not classification["is_job_related"]:
+            continue
+
+        intent = classification.get("intent")
+        print(f"[SYNC] intent={intent} | company={classification.get('extracted_company')} | matched={classification.get('matched_company')} | subject={subject[:80]}")
         application_id = None
         is_auto_linked = False
 
+        # Try to match to existing application
         if classification["matched_company"] and classification["confidence"] in ("high", "medium"):
             matched = classification["matched_company"]
             if matched in company_map:
@@ -201,8 +212,120 @@ async def sync_emails(
                 is_auto_linked = True
                 auto_linked += 1
 
-        if classification["is_job_related"] and not application_id:
-            suggestions += 1
+        # Auto-create application if this is a confirmation email and no match exists
+        if not application_id and intent == "application_confirmed":
+            company_name = classification.get("extracted_company")
+            if company_name and company_name not in company_map:
+                position = classification.get("extracted_position") or "Unknown Position"
+                # Get next stage_order
+                order_result = await db.execute(
+                    select(func.coalesce(func.max(Application.stage_order), -1)).where(
+                        Application.user_id == user_id,
+                        Application.stage == StageEnum.APPLIED,
+                    )
+                )
+                next_order = order_result.scalar_one() + 1
+
+                new_app = Application(
+                    user_id=user_id,
+                    company=company_name,
+                    position=position,
+                    stage=StageEnum.APPLIED,
+                    stage_order=next_order,
+                    applied_date=received_at.date(),
+                )
+                db.add(new_app)
+                await db.flush()
+
+                application_id = new_app.id
+                is_auto_linked = True
+                company_map[company_name] = new_app.id
+                tracked_companies.append(company_name)
+                auto_created += 1
+
+                # Add "Applied" timeline event
+                db.add(TimelineEvent(
+                    application_id=new_app.id,
+                    event_type=EventTypeEnum.APPLIED,
+                    title=f"Applied to {company_name}",
+                    description=f"Auto-detected from email: {subject[:100]}",
+                    event_date=received_at,
+                ))
+                timeline_events += 1
+
+        # If no application_id yet, try to match via extracted company name
+        if not application_id and intent in ("interview", "rejection", "offer"):
+            extracted = classification.get("extracted_company")
+            if extracted:
+                # Try exact match first
+                if extracted in company_map:
+                    application_id = company_map[extracted]
+                    is_auto_linked = True
+                    auto_linked += 1
+                else:
+                    # Try fuzzy match against tracked companies
+                    for comp_name, comp_id in company_map.items():
+                        if fuzz.ratio(extracted.lower(), comp_name.lower()) >= 70:
+                            application_id = comp_id
+                            is_auto_linked = True
+                            auto_linked += 1
+                            break
+
+        # Auto-update stage and add timeline events for existing applications
+        if application_id and intent in ("interview", "rejection", "offer"):
+            app_result = await db.execute(
+                select(Application).where(Application.id == application_id)
+            )
+            app = app_result.scalar_one_or_none()
+
+            if app and intent == "interview":
+                # Move to interview stage if not already past it
+                if app.stage in (StageEnum.APPLIED, StageEnum.SCREENING):
+                    app.stage = StageEnum.INTERVIEW
+                    app.updated_at = datetime.now(timezone.utc)
+                    db.add(app)
+                    stage_updates += 1
+
+                db.add(TimelineEvent(
+                    application_id=application_id,
+                    event_type=EventTypeEnum.TECHNICAL_INTERVIEW,
+                    title=f"Interview scheduled",
+                    description=f"Auto-detected from email: {subject[:100]}",
+                    event_date=received_at,
+                ))
+                timeline_events += 1
+
+            elif app and intent == "rejection":
+                if app.stage != StageEnum.REJECTED:
+                    app.stage = StageEnum.REJECTED
+                    app.updated_at = datetime.now(timezone.utc)
+                    db.add(app)
+                    stage_updates += 1
+
+                db.add(TimelineEvent(
+                    application_id=application_id,
+                    event_type=EventTypeEnum.REJECTION,
+                    title=f"Application rejected",
+                    description=f"Auto-detected from email: {subject[:100]}",
+                    event_date=received_at,
+                ))
+                timeline_events += 1
+
+            elif app and intent == "offer":
+                if app.stage != StageEnum.OFFER:
+                    app.stage = StageEnum.OFFER
+                    app.updated_at = datetime.now(timezone.utc)
+                    db.add(app)
+                    stage_updates += 1
+
+                db.add(TimelineEvent(
+                    application_id=application_id,
+                    event_type=EventTypeEnum.OFFER,
+                    title=f"Offer received",
+                    description=f"Auto-detected from email: {subject[:100]}",
+                    event_date=received_at,
+                ))
+                timeline_events += 1
 
         # Store the email
         email_msg = EmailMessage(
@@ -224,7 +347,13 @@ async def sync_emails(
     account.last_sync_at = datetime.now(timezone.utc)
     db.add(account)
 
-    return {"new_emails": new_count, "auto_linked": auto_linked, "suggestions": suggestions}
+    return {
+        "new_emails": new_count,
+        "auto_linked": auto_linked,
+        "auto_created": auto_created,
+        "stage_updates": stage_updates,
+        "timeline_events": timeline_events,
+    }
 
 
 async def get_gmail_status(user_id: uuid.UUID, db: AsyncSession) -> dict:
