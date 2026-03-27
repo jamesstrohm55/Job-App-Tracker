@@ -22,7 +22,7 @@ class Settings(BaseSettings):
 
     # LLM (OpenRouter)
     openrouter_api_key: str = ""
-    openrouter_model: str = "nvidia/llama-3.1-nemotron-70b-instruct"
+    openrouter_model: str = "nvidia/nemotron-3-super-120b-a12b:free"
 
     # App
     frontend_url: str = "http://localhost:5173"

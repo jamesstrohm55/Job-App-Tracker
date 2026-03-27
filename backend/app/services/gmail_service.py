@@ -17,7 +17,6 @@ from app.models.email_account import EmailAccount
 from app.models.email_message import EmailMessage
 from app.models.timeline_event import EventTypeEnum, TimelineEvent
 from app.services.email_parser import classify_email, match_company
-from app.services.llm_classifier import classify_email_with_llm
 from app.services.encryption import decrypt_token, encrypt_token
 from app.utils.gmail_queries import build_job_email_query
 
@@ -107,6 +106,94 @@ async def disconnect_gmail(user_id: uuid.UUID, db: AsyncSession) -> bool:
     return True
 
 
+def _strip_html(html: str) -> str:
+    """Convert HTML to readable plain text."""
+    import re as _re
+    # Remove style and script blocks entirely
+    text = _re.sub(r"<style[^>]*>.*?</style>", "", html, flags=_re.DOTALL | _re.IGNORECASE)
+    text = _re.sub(r"<script[^>]*>.*?</script>", "", text, flags=_re.DOTALL | _re.IGNORECASE)
+    # Replace <br>, <p>, <div>, <tr>, <li> with newlines
+    text = _re.sub(r"<br\s*/?>", "\n", text, flags=_re.IGNORECASE)
+    text = _re.sub(r"</(p|div|tr|li|h[1-6])>", "\n", text, flags=_re.IGNORECASE)
+    # Strip remaining tags
+    text = _re.sub(r"<[^>]+>", " ", text)
+    # Decode HTML entities
+    text = text.replace("&amp;", "&").replace("&lt;", "<").replace("&gt;", ">")
+    text = text.replace("&quot;", '"').replace("&#39;", "'").replace("&nbsp;", " ")
+    # Collapse whitespace but preserve newlines
+    lines = [_re.sub(r"[ \t]+", " ", line).strip() for line in text.split("\n")]
+    text = "\n".join(line for line in lines if line)
+    return text.strip()
+
+
+def _extract_body_text(payload: dict) -> str | None:
+    """Extract plain text body from a Gmail message payload."""
+    import base64
+
+    def _get_text_from_parts(parts: list[dict]) -> str | None:
+        for part in parts:
+            mime = part.get("mimeType", "")
+            if mime == "text/plain":
+                data = part.get("body", {}).get("data", "")
+                if data:
+                    return base64.urlsafe_b64decode(data).decode("utf-8", errors="replace")
+            if mime.startswith("multipart/"):
+                result = _get_text_from_parts(part.get("parts", []))
+                if result:
+                    return result
+        # Fallback: try text/html with proper stripping
+        for part in parts:
+            if part.get("mimeType") == "text/html":
+                data = part.get("body", {}).get("data", "")
+                if data:
+                    html = base64.urlsafe_b64decode(data).decode("utf-8", errors="replace")
+                    return _strip_html(html)
+        return None
+
+    # Simple message (no parts)
+    if payload.get("mimeType", "").startswith("text/"):
+        data = payload.get("body", {}).get("data", "")
+        if data:
+            text = base64.urlsafe_b64decode(data).decode("utf-8", errors="replace")
+            if payload.get("mimeType") == "text/html":
+                return _strip_html(text)
+            return text
+
+    # Multipart message
+    parts = payload.get("parts", [])
+    if parts:
+        return _get_text_from_parts(parts)
+
+    return None
+
+
+def _extract_raw_html(payload: dict) -> str | None:
+    """Extract raw HTML body from a Gmail message payload (for LLM consumption)."""
+    import base64
+
+    def _find_html(parts: list[dict]) -> str | None:
+        for part in parts:
+            if part.get("mimeType") == "text/html":
+                data = part.get("body", {}).get("data", "")
+                if data:
+                    return base64.urlsafe_b64decode(data).decode("utf-8", errors="replace")
+            if part.get("mimeType", "").startswith("multipart/"):
+                result = _find_html(part.get("parts", []))
+                if result:
+                    return result
+        return None
+
+    if payload.get("mimeType") == "text/html":
+        data = payload.get("body", {}).get("data", "")
+        if data:
+            return base64.urlsafe_b64decode(data).decode("utf-8", errors="replace")
+
+    parts = payload.get("parts", [])
+    if parts:
+        return _find_html(parts)
+    return None
+
+
 def _build_gmail_client(refresh_token: str) -> object:
     """Build an authenticated Gmail API client from a refresh token."""
     credentials = Credentials(
@@ -173,15 +260,16 @@ async def sync_emails(
     stage_updates = 0
     timeline_events = 0
 
+    # ── PASS 1: Fetch metadata + rules pre-filter (fast, no LLM) ──
+    email_batch: list[dict] = []
+
     for msg_id in message_ids:
-        # Skip if already stored
         existing = await db.execute(
             select(EmailMessage).where(EmailMessage.gmail_message_id == msg_id)
         )
         if existing.scalar_one_or_none():
             continue
 
-        # Fetch message metadata
         msg = service.users().messages().get(
             userId="me", id=msg_id, format="metadata",
             metadataHeaders=["Subject", "From", "Date"]
@@ -192,50 +280,86 @@ async def sync_emails(
         from_address = headers.get("From", "")
         snippet = msg.get("snippet", "")
         thread_id = msg.get("threadId", "")
-
-        # Parse the date
         internal_date_ms = int(msg.get("internalDate", "0"))
         received_at = datetime.fromtimestamp(internal_date_ms / 1000, tz=timezone.utc)
 
-        # Step 1: Fast rules-based pre-filter
         rules_result = classify_email(from_address, subject, snippet, tracked_companies)
-
         if not rules_result["is_job_related"]:
             continue
 
         rules_intent = rules_result.get("intent")
 
-        # Step 2: Only send actionable emails to LLM for better accuracy
-        ACTIONABLE_INTENTS = {"application_confirmed", "interview", "rejection", "offer"}
-        if rules_intent in ACTIONABLE_INTENTS:
-            llm_result = await classify_email_with_llm(from_address, subject, snippet)
+        entry = {
+            "msg_id": msg_id, "subject": subject, "from_address": from_address,
+            "snippet": snippet, "thread_id": thread_id, "received_at": received_at,
+            "rules_result": rules_result, "rules_intent": rules_intent,
+            "llm_snippet": snippet,
+        }
 
-            if llm_result and llm_result["is_job_related"]:
-                classification = llm_result
-                # Add fuzzy company matching from rules engine
-                classification["matched_company"] = match_company(
-                    from_address, subject, snippet, tracked_companies
-                )
-                if classification.get("extracted_company") and not classification["matched_company"]:
-                    for comp_name in tracked_companies:
-                        if fuzz.ratio(classification["extracted_company"].lower(), comp_name.lower()) >= 85:
-                            classification["matched_company"] = comp_name
-                            break
-                source = "LLM"
-            elif llm_result and not llm_result["is_job_related"]:
-                # LLM says not job-related — skip (LLM overrides rules for false positives)
-                print(f"[SYNC:LLM-skip] LLM rejected rules hit | subject={subject[:80]}")
-                continue
-            else:
-                # LLM failed — fall back to rules
-                classification = rules_result
-                source = "rules"
-        else:
-            # Non-actionable intent (general) — just use rules, no LLM needed
-            classification = rules_result
-            source = "rules"
+        # For interviews and application_confirmed, fetch full body
+        # (interviews need meeting details, app_confirmed might be rejections in disguise)
+        if rules_intent in ("interview", "application_confirmed"):
+            try:
+                full_msg = service.users().messages().get(
+                    userId="me", id=msg_id, format="full"
+                ).execute()
+                # Get clean text for rejection override
+                body_text = _extract_body_text(full_msg.get("payload", {}))
+                if body_text:
+                    entry["full_body"] = body_text
+
+                # For LLM, strip HTML fully and send clean text
+                raw_html = _extract_raw_html(full_msg.get("payload", {}))
+                if raw_html:
+                    clean = _strip_html(raw_html)
+                    entry["llm_snippet"] = clean[:3000]
+                    entry["full_body"] = clean  # Override with better extraction
+                    print(f"[SYNC:body] fetched {len(clean)} chars clean for: {subject[:60]}")
+                elif body_text:
+                    entry["llm_snippet"] = body_text[:2000]
+                    print(f"[SYNC:body] fetched {len(body_text)} chars text for: {subject[:60]}")
+                else:
+                    print(f"[SYNC:body] EMPTY body for: {subject[:60]}")
+            except Exception as e:
+                print(f"[SYNC] Failed to fetch full body: {e}")
+
+        email_batch.append(entry)
+
+    # ── PASS 2: Process all emails (rules only + rejection override) ──
+    for entry in email_batch:
+        subject = entry["subject"]
+        from_address = entry["from_address"]
+        snippet = entry["snippet"]
+        msg_id = entry["msg_id"]
+        thread_id = entry["thread_id"]
+        received_at = entry["received_at"]
+        rules_result = entry["rules_result"]
+        rules_intent = entry["rules_intent"]
+
+        classification = rules_result
+        source = "rules"
 
         intent = classification.get("intent")
+
+        # Safety net: check ALL available text for rejection language.
+        # LinkedIn HTML bodies often have the rejection text buried deep,
+        # but the Gmail snippet (which Google extracts) usually has it.
+        from app.services.email_parser import REJECTION_KEYWORDS
+        texts_to_check = [
+            snippet,  # Gmail's own text extraction — most reliable
+            entry.get("full_body") or "",
+            entry.get("llm_snippet") or "",
+        ]
+        combined_text = " ".join(texts_to_check).lower()
+        if intent == "application_confirmed":
+            print(f"[DEBUG:override] checking {len(combined_text)} chars for rejection keywords | snippet={snippet[:100]} | has_body={bool(entry.get('full_body'))}")
+        if intent != "rejection" and any(kw in combined_text for kw in REJECTION_KEYWORDS):
+            matched_kw = next(kw for kw in REJECTION_KEYWORDS if kw in combined_text)
+            print(f"[SYNC:override] rejection detected via '{matched_kw}' for: {subject[:60]}")
+            intent = "rejection"
+            classification["intent"] = "rejection"
+            source = f"{source}+override"
+
         print(f"[SYNC:{source}] intent={intent} | company={classification.get('extracted_company')} | matched={classification.get('matched_company')} | subject={subject[:80]}")
         application_id = None
         is_auto_linked = False
@@ -440,6 +564,7 @@ async def sync_emails(
         "auto_created": auto_created,
         "stage_updates": stage_updates,
         "timeline_events": timeline_events,
+        "llm_failures": 0,
     }
 
 
@@ -493,6 +618,44 @@ async def trash_rejection_emails(user_id: uuid.UUID, db: AsyncSession) -> dict:
         return {"trashed": 0}
 
     # Build Gmail client
+    refresh_token = decrypt_token(account.encrypted_refresh_token)
+    service = _build_gmail_client(refresh_token)
+
+    trashed = 0
+    for email in emails:
+        try:
+            service.users().messages().trash(userId="me", id=email.gmail_message_id).execute()
+            trashed += 1
+        except Exception as e:
+            print(f"[TRASH] Failed to trash {email.gmail_message_id}: {e}")
+
+    return {"trashed": trashed}
+
+
+async def trash_application_emails(
+    user_id: uuid.UUID, application_id: uuid.UUID, db: AsyncSession
+) -> dict:
+    """Move all emails linked to a specific application to Gmail trash."""
+    result = await db.execute(
+        select(EmailAccount).where(
+            EmailAccount.user_id == user_id, EmailAccount.is_active == True  # noqa: E712
+        )
+    )
+    account = result.scalar_one_or_none()
+    if not account:
+        raise ValueError("Gmail not connected")
+
+    result = await db.execute(
+        select(EmailMessage).where(
+            EmailMessage.user_id == user_id,
+            EmailMessage.application_id == application_id,
+        )
+    )
+    emails = result.scalars().all()
+
+    if not emails:
+        return {"trashed": 0}
+
     refresh_token = decrypt_token(account.encrypted_refresh_token)
     service = _build_gmail_client(refresh_token)
 

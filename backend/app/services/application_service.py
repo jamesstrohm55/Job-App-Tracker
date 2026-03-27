@@ -1,7 +1,7 @@
 import uuid
 from datetime import datetime, timezone
 
-from sqlalchemy import func, select
+from sqlalchemy import case, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.application import Application, StageEnum
@@ -78,8 +78,18 @@ async def list_applications(
     count_query = select(func.count()).select_from(query.subquery())
     total = (await db.execute(count_query)).scalar_one()
 
-    # Paginate
-    query = query.order_by(Application.updated_at.desc()).offset((page - 1) * size).limit(size)
+    # Order: interview first, then by stage priority, then most recent
+    stage_priority = case(
+        (Application.stage == StageEnum.INTERVIEW, 0),
+        (Application.stage == StageEnum.SCREENING, 1),
+        (Application.stage == StageEnum.OFFER, 2),
+        (Application.stage == StageEnum.APPLIED, 3),
+        (Application.stage == StageEnum.SAVED, 4),
+        (Application.stage == StageEnum.REJECTED, 5),
+        (Application.stage == StageEnum.WITHDRAWN, 6),
+        else_=7,
+    )
+    query = query.order_by(stage_priority, Application.updated_at.desc()).offset((page - 1) * size).limit(size)
     result = await db.execute(query)
     items = list(result.scalars().all())
 
@@ -113,14 +123,43 @@ async def update_application(
 async def delete_application(
     app_id: uuid.UUID, user_id: uuid.UUID, db: AsyncSession
 ) -> bool:
+    from app.models.application import ApplicationContact
+    from app.models.email_message import EmailMessage
+    from app.models.timeline_event import TimelineEvent
+
     app = await get_application(app_id, user_id, db)
     if not app:
         return False
+
+    # Unlink emails (set application_id to NULL, don't delete the emails)
+    result = await db.execute(
+        select(EmailMessage).where(EmailMessage.application_id == app_id)
+    )
+    for email in result.scalars().all():
+        email.application_id = None
+        db.add(email)
+
+    # Delete timeline events
+    result = await db.execute(
+        select(TimelineEvent).where(TimelineEvent.application_id == app_id)
+    )
+    for event in result.scalars().all():
+        await db.delete(event)
+
+    # Delete contact links
+    result = await db.execute(
+        select(ApplicationContact).where(ApplicationContact.application_id == app_id)
+    )
+    for link in result.scalars().all():
+        await db.delete(link)
+
     await db.delete(app)
     return True
 
 
-async def get_board(user_id: uuid.UUID, db: AsyncSession) -> dict[StageEnum, list[Application]]:
+async def get_board(user_id: uuid.UUID, db: AsyncSession) -> dict[StageEnum, list[dict]]:
+    from app.models.timeline_event import EventTypeEnum, TimelineEvent
+
     result = await db.execute(
         select(Application)
         .where(Application.user_id == user_id, Application.is_archived == False)  # noqa: E712
@@ -128,9 +167,50 @@ async def get_board(user_id: uuid.UUID, db: AsyncSession) -> dict[StageEnum, lis
     )
     apps = result.scalars().all()
 
-    board: dict[StageEnum, list[Application]] = {stage: [] for stage in StageEnum}
+    # Get latest interview event for apps in interview stage
+    interview_app_ids = [a.id for a in apps if a.stage == StageEnum.INTERVIEW]
+    interview_map: dict[uuid.UUID, dict] = {}
+
+    if interview_app_ids:
+        interview_types = [
+            EventTypeEnum.PHONE_SCREEN, EventTypeEnum.TECHNICAL_INTERVIEW,
+            EventTypeEnum.BEHAVIORAL_INTERVIEW, EventTypeEnum.ONSITE,
+            EventTypeEnum.TAKE_HOME,
+        ]
+        for app_id in interview_app_ids:
+            ev_result = await db.execute(
+                select(TimelineEvent)
+                .where(
+                    TimelineEvent.application_id == app_id,
+                    TimelineEvent.event_type.in_(interview_types),
+                )
+                .order_by(TimelineEvent.event_date.desc())
+                .limit(1)
+            )
+            event = ev_result.scalar_one_or_none()
+            if event:
+                interview_map[app_id] = {
+                    "title": event.title,
+                    "description": event.description,
+                    "event_date": event.event_date.isoformat() if event.event_date else None,
+                }
+
+    board: dict[StageEnum, list[dict]] = {stage: [] for stage in StageEnum}
     for app in apps:
-        board[app.stage].append(app)
+        app_dict = {
+            "id": str(app.id), "user_id": str(app.user_id),
+            "company": app.company, "position": app.position,
+            "url": app.url, "location": app.location,
+            "work_model": app.work_model.value if app.work_model else None,
+            "salary_min": app.salary_min, "salary_max": app.salary_max,
+            "salary_currency": app.salary_currency,
+            "stage": app.stage.value, "stage_order": app.stage_order,
+            "notes": app.notes, "applied_date": str(app.applied_date) if app.applied_date else None,
+            "is_archived": app.is_archived,
+            "created_at": app.created_at.isoformat(), "updated_at": app.updated_at.isoformat(),
+            "interview_info": interview_map.get(app.id),
+        }
+        board[app.stage].append(app_dict)
     return board
 
 

@@ -25,6 +25,11 @@ export interface Application {
   is_archived: boolean
   created_at: string
   updated_at: string
+  interview_info?: {
+    title: string | null
+    description: string | null
+    event_date: string | null
+  } | null
 }
 
 export interface Contact {

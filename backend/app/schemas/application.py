@@ -35,6 +35,12 @@ class ApplicationUpdate(BaseModel):
     is_archived: bool | None = None
 
 
+class InterviewInfo(BaseModel):
+    title: str | None = None
+    description: str | None = None
+    event_date: datetime | None = None
+
+
 class ApplicationResponse(BaseModel):
     model_config = {"from_attributes": True}
 
@@ -55,6 +61,7 @@ class ApplicationResponse(BaseModel):
     is_archived: bool
     created_at: datetime
     updated_at: datetime
+    interview_info: InterviewInfo | None = None
 
 
 class ApplicationListResponse(BaseModel):

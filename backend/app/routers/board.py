@@ -15,17 +15,18 @@ from app.services.application_service import get_board, move_application, reorde
 router = APIRouter(prefix="/board", tags=["board"])
 
 
-@router.get("", response_model=BoardResponse)
+@router.get("")
 async def board(
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
     columns = await get_board(user.id, db)
-    return BoardResponse(
-        columns=[
-            BoardColumn(stage=stage, applications=apps) for stage, apps in columns.items()
+    return {
+        "columns": [
+            {"stage": stage.value, "applications": apps}
+            for stage, apps in columns.items()
         ]
-    )
+    }
 
 
 @router.patch("/move")

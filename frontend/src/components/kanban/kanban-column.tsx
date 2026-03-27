@@ -11,6 +11,7 @@ interface KanbanColumnProps {
   applications: Application[]
   onAddClick: () => void
   onCardClick: (app: Application) => void
+  onTrashEmails?: (appId: string) => void
 }
 
 export function KanbanColumn({
@@ -18,6 +19,7 @@ export function KanbanColumn({
   applications,
   onAddClick,
   onCardClick,
+  onTrashEmails,
 }: KanbanColumnProps) {
   const { setNodeRef, isOver } = useDroppable({ id: stage })
 
@@ -63,6 +65,7 @@ export function KanbanColumn({
               key={app.id}
               application={app}
               onClick={() => onCardClick(app)}
+              onTrashEmails={onTrashEmails}
             />
           ))}
         </SortableContext>

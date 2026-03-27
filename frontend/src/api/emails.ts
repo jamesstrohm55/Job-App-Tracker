@@ -27,6 +27,7 @@ export interface EmailSyncResponse {
   auto_created: number
   stage_updates: number
   timeline_events: number
+  llm_failures: number
   sync_duration_seconds: number
 }
 
@@ -95,5 +96,10 @@ export async function unlinkEmail(emailId: string): Promise<void> {
 
 export async function trashRejectionEmails(): Promise<{ trashed: number }> {
   const { data } = await api.post<{ trashed: number }>("/emails/trash-rejections")
+  return data
+}
+
+export async function trashApplicationEmails(appId: string): Promise<{ trashed: number }> {
+  const { data } = await api.post<{ trashed: number }>(`/emails/trash-application/${appId}`)
   return data
 }

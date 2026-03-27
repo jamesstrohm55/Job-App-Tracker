@@ -4,6 +4,8 @@ import { Button } from "@/components/ui/button"
 import { KanbanBoard } from "@/components/kanban/kanban-board"
 import { ApplicationForm } from "@/components/applications/application-form"
 import { useBoard, useCreateApplication, useMoveApplication } from "@/hooks/use-applications"
+import { useTrashApplicationEmails } from "@/hooks/use-emails"
+import { toast } from "sonner"
 import type { Stage } from "@/lib/constants"
 import type { Application } from "@/types"
 import type { ApplicationCreate } from "@/api/applications"
@@ -12,6 +14,7 @@ export function BoardPage() {
   const { data, isLoading, error } = useBoard()
   const createApp = useCreateApplication()
   const moveApp = useMoveApplication()
+  const trashEmails = useTrashApplicationEmails()
 
   const [formOpen, setFormOpen] = useState(false)
   const [formStage, setFormStage] = useState<Stage>("saved")
@@ -70,6 +73,14 @@ export function BoardPage() {
           onMove={handleMove}
           onAddClick={handleAddClick}
           onCardClick={handleCardClick}
+          onTrashEmails={(appId) => {
+            trashEmails.mutate(appId, {
+              onSuccess: (result) => {
+                toast.success(`Trashed ${result.trashed} email(s)`)
+              },
+              onError: () => toast.error("Failed to trash emails"),
+            })
+          }}
         />
       )}
 

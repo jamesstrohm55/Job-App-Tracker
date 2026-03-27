@@ -26,6 +26,7 @@ from app.services.gmail_service import (
     get_gmail_auth_url,
     get_gmail_status,
     sync_emails,
+    trash_application_emails,
     trash_rejection_emails,
 )
 
@@ -97,6 +98,20 @@ async def trash_rejections(
     """Move all emails linked to rejected applications to Gmail trash."""
     try:
         result = await trash_rejection_emails(user.id, db)
+        return result
+    except ValueError as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+
+
+@router.post("/trash-application/{app_id}")
+async def trash_app_emails(
+    app_id: uuid.UUID,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Move all emails linked to a specific application to Gmail trash."""
+    try:
+        result = await trash_application_emails(user.id, app_id, db)
         return result
     except ValueError as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))

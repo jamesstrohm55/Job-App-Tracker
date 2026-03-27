@@ -14,6 +14,7 @@ class EmailSyncResponse(BaseModel):
     auto_created: int = 0
     stage_updates: int = 0
     timeline_events: int = 0
+    llm_failures: int = 0
     sync_duration_seconds: float = 0.0
 
 

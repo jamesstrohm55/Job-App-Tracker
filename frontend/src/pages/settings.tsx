@@ -119,6 +119,11 @@ export function SettingsPage() {
                 {syncEmails.data.timeline_events > 0 && (
                   <p><span className="font-medium">{syncEmails.data.timeline_events}</span> timeline events added</p>
                 )}
+                {syncEmails.data.llm_failures > 0 && (
+                  <p className="text-amber-600 dark:text-amber-400">
+                    <span className="font-medium">{syncEmails.data.llm_failures}</span> LLM classification(s) failed — used rules fallback
+                  </p>
+                )}
               </div>
             )}
           </div>

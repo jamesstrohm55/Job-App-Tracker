@@ -1,4 +1,4 @@
-"""LLM-powered email classifier using Nemotron via OpenRouter."""
+"""LLM-powered email classifier using OpenRouter (Nemotron 70B)."""
 
 import json
 
@@ -37,7 +37,7 @@ Rules:
   - null: Not job-related at all
 - "company" should be the ACTUAL COMPANY being applied to, NOT job platforms like LinkedIn, Indeed, Greenhouse, Lever, etc.
 - "position" should be the job title if mentioned
-- "interview_details" should ONLY be populated when intent is "interview". Extract as much detail as possible from the email.
+- "interview_details" should ONLY be populated when intent is "interview". Extract as much detail as possible.
   - "type": classify the interview type based on context
   - "participants": extract names and emails of interviewers/organizers mentioned
   - "meeting_link": extract any Zoom, Google Meet, Teams, or other video call links
@@ -51,19 +51,16 @@ async def classify_email_with_llm(
     subject: str,
     snippet: str,
 ) -> dict | None:
-    """Classify an email using Nemotron via OpenRouter.
-
-    Returns the parsed classification dict, or None if the LLM call fails.
-    """
+    """Classify an email using OpenRouter (Nemotron)."""
     if not settings.openrouter_api_key:
         return None
 
     user_message = f"""From: {from_address}
 Subject: {subject}
-Preview: {snippet[:500]}"""
+Preview: {snippet[:3000]}"""
 
     try:
-        async with httpx.AsyncClient(timeout=15.0) as client:
+        async with httpx.AsyncClient(timeout=20.0) as client:
             response = await client.post(
                 "https://openrouter.ai/api/v1/chat/completions",
                 headers={
@@ -83,9 +80,13 @@ Preview: {snippet[:500]}"""
             response.raise_for_status()
 
             data = response.json()
-            content = data["choices"][0]["message"]["content"].strip()
+            content = data["choices"][0]["message"].get("content") or ""
+            content = content.strip()
+            if not content:
+                print(f"[LLM] Empty response for: {subject[:60]}")
+                return None
 
-            # Parse JSON — handle cases where LLM wraps in ```json
+            # Handle markdown-wrapped JSON
             if content.startswith("```"):
                 content = content.split("\n", 1)[1].rsplit("```", 1)[0].strip()
 

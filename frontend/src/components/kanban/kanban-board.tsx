@@ -22,9 +22,10 @@ interface KanbanBoardProps {
   onMove: (applicationId: string, newStage: Stage, newOrder: number) => void
   onAddClick: (stage: Stage) => void
   onCardClick: (app: Application) => void
+  onTrashEmails?: (appId: string) => void
 }
 
-export function KanbanBoard({ data, onMove, onAddClick, onCardClick }: KanbanBoardProps) {
+export function KanbanBoard({ data, onMove, onAddClick, onCardClick, onTrashEmails }: KanbanBoardProps) {
   const [activeApp, setActiveApp] = useState<Application | null>(null)
   const scrollRef = useRef<HTMLDivElement>(null)
   const isPanning = useRef(false)
@@ -161,6 +162,7 @@ export function KanbanBoard({ data, onMove, onAddClick, onCardClick }: KanbanBoa
             applications={columnMap[stage]}
             onAddClick={() => onAddClick(stage)}
             onCardClick={onCardClick}
+            onTrashEmails={onTrashEmails}
           />
         ))}
       </div>

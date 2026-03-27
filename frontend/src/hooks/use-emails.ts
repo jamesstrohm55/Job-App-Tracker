@@ -1,4 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
+import { toast } from "sonner"
 import {
   connectGmail,
   disconnectGmail,
@@ -7,6 +8,7 @@ import {
   linkEmail,
   listEmails,
   syncEmails,
+  trashApplicationEmails,
   trashRejectionEmails,
   unlinkEmail,
 } from "@/api/emails"
@@ -61,16 +63,22 @@ export function useSyncEmails() {
   const queryClient = useQueryClient()
   return useMutation({
     mutationFn: () => syncEmails(),
-    onSuccess: () => {
+    onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: ["emails"] })
       queryClient.invalidateQueries({ queryKey: ["email-suggestions"] })
       queryClient.invalidateQueries({ queryKey: ["gmail-status"] })
-      // Sync may auto-create apps and update stages
       queryClient.invalidateQueries({ queryKey: ["board"] })
       queryClient.invalidateQueries({ queryKey: ["applications"] })
       queryClient.invalidateQueries({ queryKey: ["analytics"] })
       queryClient.invalidateQueries({ queryKey: ["timeline"] })
+
+      if (data.llm_failures > 0) {
+        toast.warning(
+          `LLM classification failed for ${data.llm_failures} email(s) — used rules fallback. Try syncing again in a minute.`
+        )
+      }
     },
+    onError: () => toast.error("Sync failed. Is Gmail connected?"),
   })
 }
 
@@ -93,6 +101,17 @@ export function useUnlinkEmail() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["emails"] })
       queryClient.invalidateQueries({ queryKey: ["email-suggestions"] })
+    },
+  })
+}
+
+export function useTrashApplicationEmails() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (appId: string) => trashApplicationEmails(appId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["emails"] })
+      queryClient.invalidateQueries({ queryKey: ["gmail-status"] })
     },
   })
 }
