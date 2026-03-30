@@ -1,10 +1,13 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { toast } from "sonner"
 import {
+  confirmRejection,
   connectGmail,
+  dismissEmail,
   disconnectGmail,
   getEmailSuggestions,
   getGmailStatus,
+  getPendingActions,
   linkEmail,
   listEmails,
   syncEmails,
@@ -17,6 +20,39 @@ export function useGmailStatus() {
   return useQuery({
     queryKey: ["gmail-status"],
     queryFn: getGmailStatus,
+  })
+}
+
+export function usePendingActions() {
+  return useQuery({
+    queryKey: ["pending-actions"],
+    queryFn: getPendingActions,
+  })
+}
+
+export function useDismissEmail() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (emailId: string) => dismissEmail(emailId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["pending-actions"] })
+      queryClient.invalidateQueries({ queryKey: ["emails"] })
+    },
+  })
+}
+
+export function useConfirmRejection() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: ({ emailId, applicationId }: { emailId: string; applicationId: string }) =>
+      confirmRejection(emailId, applicationId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["pending-actions"] })
+      queryClient.invalidateQueries({ queryKey: ["board"] })
+      queryClient.invalidateQueries({ queryKey: ["applications"] })
+      queryClient.invalidateQueries({ queryKey: ["emails"] })
+      toast.success("Application moved to rejected")
+    },
   })
 }
 
@@ -63,20 +99,13 @@ export function useSyncEmails() {
   const queryClient = useQueryClient()
   return useMutation({
     mutationFn: () => syncEmails(),
-    onSuccess: (data) => {
+    onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["emails"] })
       queryClient.invalidateQueries({ queryKey: ["email-suggestions"] })
       queryClient.invalidateQueries({ queryKey: ["gmail-status"] })
+      queryClient.invalidateQueries({ queryKey: ["pending-actions"] })
       queryClient.invalidateQueries({ queryKey: ["board"] })
       queryClient.invalidateQueries({ queryKey: ["applications"] })
-      queryClient.invalidateQueries({ queryKey: ["analytics"] })
-      queryClient.invalidateQueries({ queryKey: ["timeline"] })
-
-      if (data.llm_failures > 0) {
-        toast.warning(
-          `LLM classification failed for ${data.llm_failures} email(s) — used rules fallback. Try syncing again in a minute.`
-        )
-      }
     },
     onError: () => toast.error("Sync failed. Is Gmail connected?"),
   })
@@ -89,7 +118,7 @@ export function useLinkEmail() {
       linkEmail(emailId, applicationId),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["emails"] })
-      queryClient.invalidateQueries({ queryKey: ["email-suggestions"] })
+      queryClient.invalidateQueries({ queryKey: ["pending-actions"] })
     },
   })
 }
@@ -100,7 +129,6 @@ export function useUnlinkEmail() {
     mutationFn: (emailId: string) => unlinkEmail(emailId),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["emails"] })
-      queryClient.invalidateQueries({ queryKey: ["email-suggestions"] })
     },
   })
 }

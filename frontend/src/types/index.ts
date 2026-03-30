@@ -30,6 +30,7 @@ export interface Application {
     description: string | null
     event_date: string | null
   } | null
+  past_interview?: boolean
 }
 
 export interface Contact {

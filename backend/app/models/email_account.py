@@ -19,6 +19,7 @@ class EmailAccount(SQLModel, table=True):
     email_address: str
     encrypted_refresh_token: bytes
     last_sync_at: datetime | None = Field(default=None, sa_type=TZDateTime)
+    last_history_id: str | None = None
     is_active: bool = Field(default=True)
     created_at: datetime = Field(default_factory=_utcnow, sa_type=TZDateTime)
     updated_at: datetime = Field(default_factory=_utcnow, sa_type=TZDateTime)

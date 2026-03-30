@@ -62,8 +62,11 @@ class TestDetectIntent:
     def test_offer(self):
         assert detect_intent("Congratulations!", "we are pleased to offer you") == "offer"
 
+    def test_next_steps_is_interview(self):
+        assert detect_intent("Next steps for your application", "") == "interview"
+
     def test_general(self):
-        assert detect_intent("Next steps for your application", "") == "general"
+        assert detect_intent("Application status update", "We are reviewing your profile") == "general"
 
 
 class TestExtractCompany:

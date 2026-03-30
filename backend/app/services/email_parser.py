@@ -11,6 +11,7 @@ ATS_DOMAINS = {
     "hire.jazz.co", "breezy.hr", "recruitee.com", "talent.com",
     "linkedin.com", "indeed.com", "glassdoor.com", "ziprecruiter.com",
     "dice.com", "hired.com", "angellist.com", "wellfound.com",
+    "calendly.com", "zoom.us", "meet.google.com",
 }
 
 # Platforms whose name should NEVER be extracted as the company
@@ -18,6 +19,7 @@ PLATFORM_NAMES = {
     "linkedin", "indeed", "glassdoor", "ziprecruiter", "dice", "hired",
     "angellist", "wellfound", "greenhouse", "lever", "ashby", "icims",
     "smartrecruiters", "jobvite", "workable", "breezy", "recruitee",
+    "calendly", "zoom",
     "talent", "jazz",
 }
 
@@ -42,6 +44,9 @@ INTERVIEW_KEYWORDS = [
     "final round", "meet the team",
     "skills assessment", "technical assessment", "online assessment",
     "next steps", "next step with",
+    "friendly reminder", "via calendly",
+    "30 min intro", "intro call", "introductory call",
+    "zoom web conference", "join this meeting",
 ]
 
 REJECTION_KEYWORDS = [

@@ -17,12 +17,22 @@ def build_job_email_query(after_date: datetime | None = None) -> str:
         "from:workable.com",
         "from:linkedin.com",
         "from:indeed.com",
+        "from:glassdoor.com",
+        "from:ziprecruiter.com",
+        "from:wellfound.com",
+        "from:hired.com",
     ]
 
-    # Keyword queries
+    # Keyword queries — broader to catch recruiter emails
     keyword_queries = [
         "subject:(application OR interview OR offer OR assessment)",
         "subject:(hiring process OR next steps OR phone screen)",
+        "subject:(coding challenge OR take-home OR technical assessment)",
+        "subject:(skills assessment OR online assessment)",
+        "subject:(invitation OR scheduled OR calendar)",
+        "subject:(candidacy OR candidate OR position OR role)",
+        "subject:(recruiter OR recruiting OR recruitment)",
+        "subject:(resume OR CV)",
     ]
 
     # Combine with OR

@@ -114,6 +114,7 @@ cd ..
 ```bash
 cd backend
 uvicorn app.main:app --reload --port 8000
+# for python users, put python -m in front of the command to launch uvicorn
 ```
 
 API docs available at http://localhost:8000/docs

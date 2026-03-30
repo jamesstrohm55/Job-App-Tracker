@@ -167,7 +167,6 @@ async def get_board(user_id: uuid.UUID, db: AsyncSession) -> dict[StageEnum, lis
     )
     apps = result.scalars().all()
 
-    # Get latest interview event for apps in interview stage
     interview_app_ids = [a.id for a in apps if a.stage == StageEnum.INTERVIEW]
     interview_map: dict[uuid.UUID, dict] = {}
 

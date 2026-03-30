@@ -107,22 +107,8 @@ export function SettingsPage() {
                     {syncEmails.data.sync_duration_seconds}s
                   </span>
                 </div>
-                {syncEmails.data.auto_created > 0 && (
-                  <p><span className="font-medium">{syncEmails.data.auto_created}</span> applications auto-created</p>
-                )}
                 {syncEmails.data.auto_linked > 0 && (
                   <p><span className="font-medium">{syncEmails.data.auto_linked}</span> emails auto-linked</p>
-                )}
-                {syncEmails.data.stage_updates > 0 && (
-                  <p><span className="font-medium">{syncEmails.data.stage_updates}</span> application stages updated</p>
-                )}
-                {syncEmails.data.timeline_events > 0 && (
-                  <p><span className="font-medium">{syncEmails.data.timeline_events}</span> timeline events added</p>
-                )}
-                {syncEmails.data.llm_failures > 0 && (
-                  <p className="text-amber-600 dark:text-amber-400">
-                    <span className="font-medium">{syncEmails.data.llm_failures}</span> LLM classification(s) failed — used rules fallback
-                  </p>
                 )}
               </div>
             )}

@@ -1,55 +1,189 @@
-import { useState } from "react"
-import { format } from "date-fns"
-import { Link2, Link2Off, Mail, RefreshCw } from "lucide-react"
+import { useState, useEffect } from "react"
+import { RefreshCw, Search, PenSquare, Mail } from "lucide-react"
 import { Button } from "@/components/ui/button"
-import { Select } from "@/components/ui/select"
+import { Input } from "@/components/ui/input"
+import { EmailList } from "@/components/emails/email-list"
+import { EmailDetail } from "@/components/emails/email-detail"
+import { ComposeDialog } from "@/components/emails/compose-dialog"
 import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog"
-import {
-  useEmails,
-  useEmailSuggestions,
-  useGmailStatus,
-  useLinkEmail,
-  useSyncEmails,
-  useUnlinkEmail,
-} from "@/hooks/use-emails"
-import { useApplications } from "@/hooks/use-applications"
+  getInbox,
+  getEmailBody,
+  syncAllEmails,
+  composeEmail,
+  replyToEmail,
+  trashEmail,
+  markEmailRead,
+  type InboxItem,
+  type InboxResponse,
+} from "@/api/emails"
+import { useGmailStatus } from "@/hooks/use-emails"
+import { toast } from "sonner"
+import { cn } from "@/lib/utils"
+import { useQueryClient } from "@tanstack/react-query"
+
+const TABS = [
+  { key: "inbox", label: "Inbox" },
+  { key: "job", label: "Job Emails" },
+  { key: "application_confirmed", label: "Applications" },
+  { key: "interview", label: "Interviews" },
+  { key: "rejection", label: "Rejections" },
+  { key: "sent", label: "Sent" },
+] as const
 
 export function EmailsPage() {
-  const [filter, setFilter] = useState<"all" | "linked" | "unlinked">("all")
-  const [linkDialogEmail, setLinkDialogEmail] = useState<string | null>(null)
-
   const { data: gmailStatus } = useGmailStatus()
-  const syncEmails = useSyncEmails()
+  const queryClient = useQueryClient()
 
-  const { data: emailData, isLoading } = useEmails({
-    linked: filter === "linked" ? true : filter === "unlinked" ? false : undefined,
-  })
+  const [activeTab, setActiveTab] = useState<string>("inbox")
+  const [search, setSearch] = useState("")
+  const [page, setPage] = useState(1)
+  const [inboxData, setInboxData] = useState<InboxResponse | null>(null)
+  const [loading, setLoading] = useState(false)
+  const [syncing, setSyncing] = useState(false)
 
-  const { data: suggestions } = useEmailSuggestions()
-  const { data: applications } = useApplications({ size: 100 })
+  const [selectedEmail, setSelectedEmail] = useState<InboxItem | null>(null)
+  const [bodyHtml, setBodyHtml] = useState<string | null>(null)
+  const [bodyText, setBodyText] = useState<string | null>(null)
+  const [bodyLoading, setBodyLoading] = useState(false)
 
-  const linkEmail = useLinkEmail()
-  const unlinkEmail = useUnlinkEmail()
+  const [composeOpen, setComposeOpen] = useState(false)
+  const [composeSending, setComposeSending] = useState(false)
+  const [replyTo, setReplyTo] = useState<{ to: string; subject: string } | null>(null)
 
-  const handleLink = (emailId: string, applicationId: string) => {
-    linkEmail.mutate({ emailId, applicationId })
-    setLinkDialogEmail(null)
+  // Fetch inbox
+  useEffect(() => {
+    if (!gmailStatus?.connected) return
+    setLoading(true)
+    const params: Record<string, string | number> = { page, size: 50 }
+
+    if (activeTab === "inbox") {
+      params.label = "inbox"
+    } else if (activeTab === "job") {
+      params.label = "job"
+    } else if (activeTab === "sent") {
+      params.label = "sent"
+    } else {
+      // Category filter (application_confirmed, interview, rejection)
+      params.label = "all"
+      params.category = activeTab
+    }
+
+    if (search) params.search = search
+
+    getInbox(params as Parameters<typeof getInbox>[0])
+      .then(setInboxData)
+      .catch(() => toast.error("Failed to load emails"))
+      .finally(() => setLoading(false))
+  }, [activeTab, page, search, gmailStatus?.connected])
+
+  // Fetch body when email selected
+  useEffect(() => {
+    if (!selectedEmail) {
+      setBodyHtml(null)
+      setBodyText(null)
+      return
+    }
+    setBodyLoading(true)
+    setBodyHtml(null)
+    setBodyText(null)
+
+    // Mark as read
+    if (!selectedEmail.is_read) {
+      markEmailRead(selectedEmail.id).catch(() => {})
+      selectedEmail.is_read = true
+    }
+
+    getEmailBody(selectedEmail.id)
+      .then((data) => {
+        setBodyHtml(data.body_html)
+        setBodyText(data.body_text)
+      })
+      .catch(() => toast.error("Failed to load email body"))
+      .finally(() => setBodyLoading(false))
+  }, [selectedEmail?.id])
+
+  const handleSync = () => {
+    setSyncing(true)
+    syncAllEmails()
+      .then((result) => {
+        toast.success(`Synced ${result.new_emails} emails (${result.sync_duration_seconds}s)`)
+        // Refresh inbox
+        setPage(1)
+        queryClient.invalidateQueries({ queryKey: ["pending-actions"] })
+        queryClient.invalidateQueries({ queryKey: ["board"] })
+        queryClient.invalidateQueries({ queryKey: ["applications"] })
+        // Re-fetch current tab
+        const params: Record<string, string | number> = { page: 1, size: 50 }
+        if (activeTab === "inbox") params.label = "inbox"
+        else if (activeTab === "job") params.label = "job"
+        else if (activeTab === "sent") params.label = "sent"
+        else { params.label = "all"; params.category = activeTab }
+        if (search) params.search = search
+        getInbox(params as Parameters<typeof getInbox>[0]).then(setInboxData)
+      })
+      .catch(() => toast.error("Sync failed"))
+      .finally(() => setSyncing(false))
+  }
+
+  const handleCompose = (to: string, subject: string, body: string) => {
+    setComposeSending(true)
+    composeEmail(to, subject, body)
+      .then(() => {
+        toast.success("Email sent!")
+        setComposeOpen(false)
+        setReplyTo(null)
+      })
+      .catch(() => toast.error("Failed to send"))
+      .finally(() => setComposeSending(false))
+  }
+
+  const handleReply = () => {
+    if (!selectedEmail) return
+    setReplyTo({
+      to: selectedEmail.from_address,
+      subject: selectedEmail.subject.startsWith("Re:") ? selectedEmail.subject : `Re: ${selectedEmail.subject}`,
+    })
+    setComposeOpen(true)
+  }
+
+  const handleReplySubmit = (_to: string, _subject: string, body: string) => {
+    if (!selectedEmail) return
+    setComposeSending(true)
+    replyToEmail(selectedEmail.id, body)
+      .then(() => {
+        toast.success("Reply sent!")
+        setComposeOpen(false)
+        setReplyTo(null)
+      })
+      .catch(() => toast.error("Failed to send reply"))
+      .finally(() => setComposeSending(false))
+  }
+
+  const handleTrash = () => {
+    if (!selectedEmail) return
+    trashEmail(selectedEmail.id)
+      .then(() => {
+        toast.success("Email trashed")
+        setSelectedEmail(null)
+        // Remove from current list
+        if (inboxData) {
+          setInboxData({
+            ...inboxData,
+            items: inboxData.items.filter((e) => e.id !== selectedEmail.id),
+            total: inboxData.total - 1,
+          })
+        }
+      })
+      .catch(() => toast.error("Failed to trash"))
   }
 
   if (!gmailStatus?.connected) {
     return (
       <div className="space-y-4">
-        <h1 className="text-2xl font-bold tracking-tight">Emails</h1>
+        <h1 className="text-2xl font-bold tracking-tight">Email</h1>
         <div className="flex flex-col items-center justify-center py-20 gap-3">
           <Mail className="h-12 w-12 text-muted-foreground" />
-          <p className="text-muted-foreground">
-            Connect Gmail in Settings to start syncing emails.
-          </p>
+          <p className="text-muted-foreground">Connect Gmail in Settings to use the email client.</p>
           <Button variant="outline" onClick={() => (window.location.href = "/settings")}>
             Go to Settings
           </Button>
@@ -59,163 +193,110 @@ export function EmailsPage() {
   }
 
   return (
-    <div className="space-y-4">
-      <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold tracking-tight">Emails</h1>
-        <Button
-          size="sm"
-          onClick={() => syncEmails.mutate()}
-          disabled={syncEmails.isPending}
-        >
-          <RefreshCw className={`h-4 w-4 ${syncEmails.isPending ? "animate-spin" : ""}`} />
-          {syncEmails.isPending ? "Syncing..." : "Sync"}
+    <div className="flex h-[calc(100vh-7.5rem)] flex-col -mx-6 -mb-6">
+      {/* Toolbar */}
+      <div className="flex items-center gap-2 border-b border-border px-4 py-2">
+        <Button size="sm" onClick={() => { setReplyTo(null); setComposeOpen(true) }}>
+          <PenSquare className="h-4 w-4" />
+          Compose
         </Button>
-      </div>
-
-      {/* Suggestions banner */}
-      {suggestions && suggestions.suggestions.length > 0 && (
-        <div className="rounded-lg border border-amber-200 bg-amber-50 p-4 dark:border-amber-900 dark:bg-amber-950">
-          <p className="text-sm font-medium text-amber-800 dark:text-amber-200">
-            {suggestions.suggestions.length} unlinked email(s) may be job-related
-          </p>
-          <div className="mt-2 space-y-2">
-            {suggestions.suggestions.slice(0, 3).map((s) => (
-              <div
-                key={s.email.id}
-                className="flex items-center justify-between rounded-md bg-background p-2 text-sm"
-              >
-                <div className="min-w-0 flex-1">
-                  <p className="truncate font-medium">{s.email.subject}</p>
-                  <p className="text-xs text-muted-foreground">
-                    {s.matched_company
-                      ? `Likely: ${s.matched_company} (${s.confidence})`
-                      : `Job email detected (${s.confidence})`}
-                  </p>
-                </div>
-                <Button
-                  size="sm"
-                  variant="outline"
-                  onClick={() => setLinkDialogEmail(s.email.id)}
-                >
-                  <Link2 className="h-3.5 w-3.5" />
-                  Link
-                </Button>
-              </div>
-            ))}
-          </div>
+        <Button size="sm" variant="outline" onClick={handleSync} disabled={syncing}>
+          <RefreshCw className={cn("h-4 w-4", syncing && "animate-spin")} />
+          {syncing ? "Syncing..." : "Sync"}
+        </Button>
+        <div className="relative flex-1 max-w-xs">
+          <Search className="absolute left-2.5 top-2 h-4 w-4 text-muted-foreground" />
+          <Input
+            placeholder="Search emails..."
+            value={search}
+            onChange={(e) => { setSearch(e.target.value); setPage(1) }}
+            className="h-8 pl-8 text-sm"
+          />
         </div>
-      )}
-
-      {/* Filter */}
-      <div className="flex items-center gap-3">
-        <Select
-          value={filter}
-          onChange={(e) => setFilter(e.target.value as typeof filter)}
-          className="w-40"
-        >
-          <option value="all">All emails</option>
-          <option value="linked">Linked</option>
-          <option value="unlinked">Unlinked</option>
-        </Select>
-        <span className="text-sm text-muted-foreground">
-          {emailData?.total ?? 0} email(s)
-        </span>
       </div>
 
-      {/* Email list */}
-      {isLoading ? (
-        <p className="text-muted-foreground">Loading...</p>
-      ) : !emailData?.items.length ? (
-        <p className="py-10 text-center text-muted-foreground">
-          No emails found. Click "Sync" to fetch from Gmail.
-        </p>
-      ) : (
-        <div className="space-y-2">
-          {emailData.items.map((email) => (
-            <div
-              key={email.id}
-              className="flex items-center gap-4 rounded-lg border border-border p-3"
-            >
-              <div className="min-w-0 flex-1">
-                <div className="flex items-center gap-2">
-                  <p className="truncate text-sm font-medium">{email.subject}</p>
-                  {email.is_auto_linked && (
-                    <span className="shrink-0 rounded bg-green-100 px-1.5 py-0.5 text-xs text-green-700 dark:bg-green-900 dark:text-green-300">
-                      auto-linked
-                    </span>
-                  )}
-                  {email.application_id && !email.is_auto_linked && (
-                    <span className="shrink-0 rounded bg-blue-100 px-1.5 py-0.5 text-xs text-blue-700 dark:bg-blue-900 dark:text-blue-300">
-                      linked
-                    </span>
-                  )}
+      {/* Tabs */}
+      <div className="flex gap-1 border-b border-border px-4">
+        {TABS.map((tab) => (
+          <button
+            key={tab.key}
+            onClick={() => { setActiveTab(tab.key); setPage(1); setSelectedEmail(null) }}
+            className={cn(
+              "border-b-2 px-3 py-1.5 text-xs font-medium transition-colors",
+              activeTab === tab.key
+                ? "border-primary text-foreground"
+                : "border-transparent text-muted-foreground hover:text-foreground"
+            )}
+          >
+            {tab.label}
+          </button>
+        ))}
+      </div>
+
+      {/* Two-panel layout */}
+      <div className="flex flex-1 overflow-hidden">
+        {/* Email list */}
+        <div className="w-96 shrink-0 overflow-y-auto border-r border-border">
+          {loading ? (
+            <div className="flex items-center justify-center py-20">
+              <p className="text-sm text-muted-foreground">Loading...</p>
+            </div>
+          ) : inboxData ? (
+            <>
+              <EmailList
+                emails={inboxData.items}
+                selectedId={selectedEmail?.id ?? null}
+                onSelect={setSelectedEmail}
+              />
+              {inboxData.total > inboxData.size && (
+                <div className="flex items-center justify-between border-t border-border p-2">
+                  <span className="text-xs text-muted-foreground">
+                    {(page - 1) * inboxData.size + 1}-{Math.min(page * inboxData.size, inboxData.total)} of {inboxData.total}
+                  </span>
+                  <div className="flex gap-1">
+                    <Button size="sm" variant="ghost" disabled={page <= 1}
+                      onClick={() => setPage((p) => p - 1)} className="h-6 text-xs">Prev</Button>
+                    <Button size="sm" variant="ghost" disabled={page * inboxData.size >= inboxData.total}
+                      onClick={() => setPage((p) => p + 1)} className="h-6 text-xs">Next</Button>
+                  </div>
                 </div>
-                <p className="truncate text-xs text-muted-foreground">{email.from_address}</p>
-                {email.snippet && (
-                  <p className="mt-1 truncate text-xs text-muted-foreground">{email.snippet}</p>
-                )}
-              </div>
-              <div className="flex shrink-0 items-center gap-2">
-                <span className="text-xs text-muted-foreground">
-                  {format(new Date(email.received_at), "MMM d")}
-                </span>
-                {email.application_id ? (
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    className="h-7 w-7"
-                    onClick={() => unlinkEmail.mutate(email.id)}
-                    title="Unlink"
-                  >
-                    <Link2Off className="h-3.5 w-3.5" />
-                  </Button>
-                ) : (
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    className="h-7 w-7"
-                    onClick={() => setLinkDialogEmail(email.id)}
-                    title="Link to application"
-                  >
-                    <Link2 className="h-3.5 w-3.5" />
-                  </Button>
-                )}
+              )}
+            </>
+          ) : null}
+        </div>
+
+        {/* Reading pane */}
+        <div className="flex-1 overflow-hidden">
+          {selectedEmail ? (
+            <EmailDetail
+              email={selectedEmail}
+              bodyHtml={bodyHtml}
+              bodyText={bodyText}
+              bodyLoading={bodyLoading}
+              onReply={handleReply}
+              onTrash={handleTrash}
+              onLink={() => {}}
+            />
+          ) : (
+            <div className="flex h-full items-center justify-center">
+              <div className="text-center">
+                <Mail className="mx-auto h-12 w-12 text-muted-foreground/30" />
+                <p className="mt-2 text-sm text-muted-foreground">Select an email to read</p>
               </div>
             </div>
-          ))}
+          )}
         </div>
-      )}
+      </div>
 
-      {/* Link dialog */}
-      <Dialog
-        open={!!linkDialogEmail}
-        onOpenChange={(open) => !open && setLinkDialogEmail(null)}
-      >
-        <DialogContent onClose={() => setLinkDialogEmail(null)}>
-          <DialogHeader>
-            <DialogTitle>Link to Application</DialogTitle>
-          </DialogHeader>
-          <div className="max-h-64 space-y-2 overflow-y-auto">
-            {applications?.items.map((app) => (
-              <button
-                key={app.id}
-                onClick={() => linkDialogEmail && handleLink(linkDialogEmail, app.id)}
-                className="flex w-full items-center gap-3 rounded-md p-2 text-left hover:bg-accent"
-              >
-                <div>
-                  <p className="text-sm font-medium">{app.company}</p>
-                  <p className="text-xs text-muted-foreground">{app.position}</p>
-                </div>
-              </button>
-            ))}
-            {!applications?.items.length && (
-              <p className="py-4 text-center text-sm text-muted-foreground">
-                No applications to link to.
-              </p>
-            )}
-          </div>
-        </DialogContent>
-      </Dialog>
+      {/* Compose dialog */}
+      <ComposeDialog
+        open={composeOpen}
+        onOpenChange={setComposeOpen}
+        onSend={replyTo ? handleReplySubmit : handleCompose}
+        loading={composeSending}
+        replyTo={replyTo?.to}
+        replySubject={replyTo?.subject}
+      />
     </div>
   )
 }

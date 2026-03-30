@@ -11,10 +11,6 @@ class GmailConnectRequest(BaseModel):
 class EmailSyncResponse(BaseModel):
     new_emails: int
     auto_linked: int
-    auto_created: int = 0
-    stage_updates: int = 0
-    timeline_events: int = 0
-    llm_failures: int = 0
     sync_duration_seconds: float = 0.0
 
 
@@ -32,6 +28,10 @@ class EmailMessageResponse(BaseModel):
     body_preview: str | None
     received_at: datetime
     is_auto_linked: bool
+    intent: str | None = None
+    extracted_company: str | None = None
+    extracted_position: str | None = None
+    is_dismissed: bool = False
     created_at: datetime
     updated_at: datetime
 
@@ -60,3 +60,31 @@ class GmailStatusResponse(BaseModel):
     email_address: str | None = None
     last_sync_at: datetime | None = None
     total_emails: int = 0
+
+
+class PendingAction(BaseModel):
+    type: str  # "new_meeting" | "past_interview" | "rejection_detected"
+    # Email fields (for new_meeting and rejection_detected)
+    email_id: str | None = None
+    gmail_message_id: str | None = None
+    subject: str | None = None
+    from_address: str | None = None
+    snippet: str | None = None
+    received_at: datetime | None = None
+    extracted_company: str | None = None
+    # Application fields (for past_interview and rejection_detected)
+    application_id: str | None = None
+    company: str | None = None
+    position: str | None = None
+    # Past interview specific
+    interview_title: str | None = None
+    interview_date: str | None = None
+
+
+class PendingActionsResponse(BaseModel):
+    actions: list[PendingAction]
+
+
+class ConfirmRejectionRequest(BaseModel):
+    email_id: uuid.UUID
+    application_id: uuid.UUID

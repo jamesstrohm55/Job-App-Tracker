@@ -50,6 +50,8 @@ export function KanbanCard({ application, onClick, onTrashEmails }: KanbanCardPr
   const participants = parseParticipants(info?.description ?? null)
   const scheduled = parseScheduled(info?.description ?? null)
 
+  const isPastInterview = application.past_interview
+
   // Interview card — expanded with meeting details
   if (isInterview && info) {
     return (
@@ -57,7 +59,10 @@ export function KanbanCard({ application, onClick, onTrashEmails }: KanbanCardPr
         ref={setNodeRef}
         style={style}
         className={cn(
-          "group cursor-pointer rounded-md border border-blue-200 bg-blue-50/50 dark:border-blue-900 dark:bg-blue-950/30 px-2.5 py-2 shadow-sm transition-shadow hover:shadow-md",
+          "group cursor-pointer rounded-md border px-2.5 py-2 shadow-sm transition-shadow hover:shadow-md",
+          isPastInterview
+            ? "border-amber-300 bg-amber-50/50 dark:border-amber-800 dark:bg-amber-950/30"
+            : "border-blue-200 bg-blue-50/50 dark:border-blue-900 dark:bg-blue-950/30",
           isDragging && "opacity-50 shadow-lg"
         )}
         onClick={onClick}
@@ -72,13 +77,20 @@ export function KanbanCard({ application, onClick, onTrashEmails }: KanbanCardPr
           </button>
 
           <div className="min-w-0 flex-1 space-y-1.5">
-            <div>
-              <p className="truncate text-xs font-semibold leading-tight">{application.company}</p>
-              <p className="truncate text-[11px] text-muted-foreground leading-tight">{application.position}</p>
+            <div className="flex items-center gap-1.5">
+              <div className="min-w-0 flex-1">
+                <p className="truncate text-xs font-semibold leading-tight">{application.company}</p>
+                <p className="truncate text-[11px] text-muted-foreground leading-tight">{application.position}</p>
+              </div>
+              {isPastInterview && (
+                <span className="shrink-0 rounded bg-amber-200 dark:bg-amber-800 px-1 py-0.5 text-[9px] font-bold text-amber-800 dark:text-amber-200">
+                  UPDATE
+                </span>
+              )}
             </div>
 
             {info.title && (
-              <p className="text-[11px] font-medium text-blue-700 dark:text-blue-400">
+              <p className={`text-[11px] font-medium ${isPastInterview ? "text-amber-700 dark:text-amber-400" : "text-blue-700 dark:text-blue-400"}`}>
                 {info.title}
               </p>
             )}

@@ -1,9 +1,11 @@
-"""Gmail API integration: OAuth, sync, and email fetching."""
+"""Gmail API integration: OAuth, sync, email client, compose, reply."""
 
+import base64
 import uuid
 from datetime import datetime, timezone
+from email.mime.multipart import MIMEMultipart
+from email.mime.text import MIMEText
 
-from thefuzz import fuzz
 from google.auth.transport.requests import Request as GoogleRequest
 from google.oauth2.credentials import Credentials
 from google_auth_oauthlib.flow import Flow
@@ -16,13 +18,14 @@ from app.models.application import Application, StageEnum
 from app.models.email_account import EmailAccount
 from app.models.email_message import EmailMessage
 from app.models.timeline_event import EventTypeEnum, TimelineEvent
-from app.services.email_parser import classify_email, match_company
+from app.services.email_parser import classify_email, REJECTION_KEYWORDS
 from app.services.encryption import decrypt_token, encrypt_token
 from app.utils.gmail_queries import build_job_email_query
 
 GMAIL_SCOPES = [
     "https://www.googleapis.com/auth/gmail.readonly",
     "https://www.googleapis.com/auth/gmail.modify",
+    "https://www.googleapis.com/auth/gmail.send",
 ]
 
 
@@ -211,8 +214,7 @@ def _build_gmail_client(refresh_token: str) -> object:
 async def sync_emails(
     user_id: uuid.UUID, db: AsyncSession
 ) -> dict:
-    """Fetch new emails from Gmail and store them, auto-linking where possible."""
-    # Get the email account
+    """Fetch new emails from Gmail, classify them, and store. No auto-creating apps."""
     result = await db.execute(
         select(EmailAccount).where(
             EmailAccount.user_id == user_id, EmailAccount.is_active == True  # noqa: E712
@@ -222,14 +224,10 @@ async def sync_emails(
     if not account:
         raise ValueError("Gmail not connected")
 
-    # Decrypt the refresh token and build client
     refresh_token = decrypt_token(account.encrypted_refresh_token)
     service = _build_gmail_client(refresh_token)
-
-    # Build search query
     query = build_job_email_query(after_date=account.last_sync_at)
 
-    # Fetch message list
     messages_response = service.users().messages().list(
         userId="me", q=query, maxResults=100
     ).execute()
@@ -239,7 +237,135 @@ async def sync_emails(
     if not message_ids:
         account.last_sync_at = datetime.now(timezone.utc)
         db.add(account)
-        return {"new_emails": 0, "auto_linked": 0, "suggestions": 0}
+        return {"new_emails": 0, "auto_linked": 0}
+
+    # Get tracked companies for matching
+    app_result = await db.execute(
+        select(Application.company, Application.id).where(
+            Application.user_id == user_id,
+            Application.is_archived == False,  # noqa: E712
+        )
+    )
+    company_map: dict[str, uuid.UUID] = {}
+    tracked_companies: list[str] = []
+    for company, app_id in app_result.all():
+        company_map[company] = app_id
+        tracked_companies.append(company)
+
+    new_count = 0
+    auto_linked = 0
+
+    for msg_id in message_ids:
+        # Skip already stored
+        existing = await db.execute(
+            select(EmailMessage).where(EmailMessage.gmail_message_id == msg_id)
+        )
+        if existing.scalar_one_or_none():
+            continue
+
+        # Fetch metadata
+        msg = service.users().messages().get(
+            userId="me", id=msg_id, format="metadata",
+            metadataHeaders=["Subject", "From", "Date"]
+        ).execute()
+
+        headers = {h["name"]: h["value"] for h in msg.get("payload", {}).get("headers", [])}
+        subject = headers.get("Subject", "(no subject)")
+        from_address = headers.get("From", "")
+        snippet = msg.get("snippet", "")
+        thread_id = msg.get("threadId", "")
+        internal_date_ms = int(msg.get("internalDate", "0"))
+        received_at = datetime.fromtimestamp(internal_date_ms / 1000, tz=timezone.utc)
+
+        # Classify
+        classification = classify_email(from_address, subject, snippet, tracked_companies)
+        if not classification["is_job_related"]:
+            continue
+
+        intent = classification.get("intent")
+
+        # For application_confirmed emails, fetch full body to check for hidden rejections
+        if intent == "application_confirmed":
+            try:
+                full_msg = service.users().messages().get(
+                    userId="me", id=msg_id, format="full"
+                ).execute()
+                raw_html = _extract_raw_html(full_msg.get("payload", {}))
+                if raw_html:
+                    clean = _strip_html(raw_html)
+                    if any(kw in clean.lower() for kw in REJECTION_KEYWORDS):
+                        intent = "rejection"
+            except Exception:
+                pass
+
+        # Try to link to existing application (exact match only)
+        application_id = None
+        is_auto_linked = False
+        matched = classification.get("matched_company")
+        if matched and matched in company_map:
+            application_id = company_map[matched]
+            is_auto_linked = True
+            auto_linked += 1
+        else:
+            # Try extracted company exact match
+            extracted = classification.get("extracted_company")
+            if extracted and extracted in company_map:
+                application_id = company_map[extracted]
+                is_auto_linked = True
+                auto_linked += 1
+
+        # Store email with classification
+        email_msg = EmailMessage(
+            user_id=user_id,
+            application_id=application_id,
+            gmail_message_id=msg_id,
+            thread_id=thread_id,
+            subject=subject,
+            from_address=from_address,
+            snippet=snippet,
+            body_preview=snippet[:500] if snippet else None,
+            received_at=received_at,
+            is_auto_linked=is_auto_linked,
+            intent=intent,
+            extracted_company=classification.get("extracted_company"),
+            extracted_position=classification.get("extracted_position"),
+        )
+        db.add(email_msg)
+        new_count += 1
+
+    account.last_sync_at = datetime.now(timezone.utc)
+    db.add(account)
+
+    return {"new_emails": new_count, "auto_linked": auto_linked}
+
+
+async def sync_all_emails(user_id: uuid.UUID, db: AsyncSession) -> dict:
+    """Sync ALL emails from last 15 days. Classify and auto-create apps from confirmations."""
+    result = await db.execute(
+        select(EmailAccount).where(
+            EmailAccount.user_id == user_id, EmailAccount.is_active == True  # noqa: E712
+        )
+    )
+    account = result.scalar_one_or_none()
+    if not account:
+        raise ValueError("Gmail not connected")
+
+    refresh_token = decrypt_token(account.encrypted_refresh_token)
+    service = _build_gmail_client(refresh_token)
+
+    # Fetch all emails from last 15 days
+    query = "newer_than:15d"
+    all_message_ids = []
+    page_token = None
+
+    while True:
+        resp = service.users().messages().list(
+            userId="me", q=query, maxResults=500, pageToken=page_token
+        ).execute()
+        all_message_ids.extend(m["id"] for m in resp.get("messages", []))
+        page_token = resp.get("nextPageToken")
+        if not page_token:
+            break
 
     # Get tracked companies for matching
     app_result = await db.execute(
@@ -257,288 +383,110 @@ async def sync_emails(
     new_count = 0
     auto_linked = 0
     auto_created = 0
-    stage_updates = 0
-    timeline_events = 0
 
-    # ── PASS 1: Fetch metadata + rules pre-filter (fast, no LLM) ──
-    email_batch: list[dict] = []
-
-    for msg_id in message_ids:
+    for msg_id in all_message_ids:
+        # Skip already stored
         existing = await db.execute(
             select(EmailMessage).where(EmailMessage.gmail_message_id == msg_id)
         )
         if existing.scalar_one_or_none():
             continue
 
+        # Fetch metadata only (fast)
         msg = service.users().messages().get(
             userId="me", id=msg_id, format="metadata",
-            metadataHeaders=["Subject", "From", "Date"]
+            metadataHeaders=["Subject", "From", "To", "Date"]
         ).execute()
 
         headers = {h["name"]: h["value"] for h in msg.get("payload", {}).get("headers", [])}
         subject = headers.get("Subject", "(no subject)")
         from_address = headers.get("From", "")
+        to_address = headers.get("To", "")
         snippet = msg.get("snippet", "")
         thread_id = msg.get("threadId", "")
+        label_ids = msg.get("labelIds", [])
         internal_date_ms = int(msg.get("internalDate", "0"))
         received_at = datetime.fromtimestamp(internal_date_ms / 1000, tz=timezone.utc)
 
-        rules_result = classify_email(from_address, subject, snippet, tracked_companies)
-        if not rules_result["is_job_related"]:
-            continue
+        # Determine label
+        label = "inbox"
+        if "SENT" in label_ids:
+            label = "sent"
+        elif "TRASH" in label_ids:
+            label = "trash"
+        elif "DRAFT" in label_ids:
+            label = "draft"
 
-        rules_intent = rules_result.get("intent")
+        is_read = "UNREAD" not in label_ids
 
-        entry = {
-            "msg_id": msg_id, "subject": subject, "from_address": from_address,
-            "snippet": snippet, "thread_id": thread_id, "received_at": received_at,
-            "rules_result": rules_result, "rules_intent": rules_intent,
-            "llm_snippet": snippet,
-        }
+        # Classify
+        classification = classify_email(from_address, subject, snippet, tracked_companies)
+        is_job = classification["is_job_related"]
+        intent = classification.get("intent") if is_job else None
 
-        # For interviews and application_confirmed, fetch full body
-        # (interviews need meeting details, app_confirmed might be rejections in disguise)
-        if rules_intent in ("interview", "application_confirmed"):
-            try:
-                full_msg = service.users().messages().get(
-                    userId="me", id=msg_id, format="full"
-                ).execute()
-                # Get clean text for rejection override
-                body_text = _extract_body_text(full_msg.get("payload", {}))
-                if body_text:
-                    entry["full_body"] = body_text
-
-                # For LLM, strip HTML fully and send clean text
-                raw_html = _extract_raw_html(full_msg.get("payload", {}))
-                if raw_html:
-                    clean = _strip_html(raw_html)
-                    entry["llm_snippet"] = clean[:3000]
-                    entry["full_body"] = clean  # Override with better extraction
-                    print(f"[SYNC:body] fetched {len(clean)} chars clean for: {subject[:60]}")
-                elif body_text:
-                    entry["llm_snippet"] = body_text[:2000]
-                    print(f"[SYNC:body] fetched {len(body_text)} chars text for: {subject[:60]}")
-                else:
-                    print(f"[SYNC:body] EMPTY body for: {subject[:60]}")
-            except Exception as e:
-                print(f"[SYNC] Failed to fetch full body: {e}")
-
-        email_batch.append(entry)
-
-    # ── PASS 2: Process all emails (rules only + rejection override) ──
-    for entry in email_batch:
-        subject = entry["subject"]
-        from_address = entry["from_address"]
-        snippet = entry["snippet"]
-        msg_id = entry["msg_id"]
-        thread_id = entry["thread_id"]
-        received_at = entry["received_at"]
-        rules_result = entry["rules_result"]
-        rules_intent = entry["rules_intent"]
-
-        classification = rules_result
-        source = "rules"
-
-        intent = classification.get("intent")
-
-        # Safety net: check ALL available text for rejection language.
-        # LinkedIn HTML bodies often have the rejection text buried deep,
-        # but the Gmail snippet (which Google extracts) usually has it.
-        from app.services.email_parser import REJECTION_KEYWORDS
-        texts_to_check = [
-            snippet,  # Gmail's own text extraction — most reliable
-            entry.get("full_body") or "",
-            entry.get("llm_snippet") or "",
-        ]
-        combined_text = " ".join(texts_to_check).lower()
+        # Rejection override for application_confirmed emails
         if intent == "application_confirmed":
-            print(f"[DEBUG:override] checking {len(combined_text)} chars for rejection keywords | snippet={snippet[:100]} | has_body={bool(entry.get('full_body'))}")
-        if intent != "rejection" and any(kw in combined_text for kw in REJECTION_KEYWORDS):
-            matched_kw = next(kw for kw in REJECTION_KEYWORDS if kw in combined_text)
-            print(f"[SYNC:override] rejection detected via '{matched_kw}' for: {subject[:60]}")
-            intent = "rejection"
-            classification["intent"] = "rejection"
-            source = f"{source}+override"
+            # Quick check snippet for rejection keywords
+            if any(kw in snippet.lower() for kw in REJECTION_KEYWORDS):
+                intent = "rejection"
 
-        print(f"[SYNC:{source}] intent={intent} | company={classification.get('extracted_company')} | matched={classification.get('matched_company')} | subject={subject[:80]}")
+        # Try to link to existing application
         application_id = None
         is_auto_linked = False
-
-        # Try to match to existing application
-        matched_company = classification.get("matched_company")
-        if matched_company and matched_company in company_map:
-            application_id = company_map[matched_company]
-            is_auto_linked = True
-            auto_linked += 1
-
-        # Auto-create application if no match exists
-        # Works for application_confirmed AND interview (you might get an interview
-        # invite without a prior "application confirmed" email)
-        if not application_id and intent in ("application_confirmed", "interview", "rejection", "offer"):
-            company_name = classification.get("extracted_company")
-            if company_name:
-                # Try to match extracted company to existing apps
-                if company_name in company_map:
-                    application_id = company_map[company_name]
+        if is_job:
+            matched = classification.get("matched_company")
+            if matched and matched in company_map:
+                application_id = company_map[matched]
+                is_auto_linked = True
+                auto_linked += 1
+            else:
+                extracted = classification.get("extracted_company")
+                if extracted and extracted in company_map:
+                    application_id = company_map[extracted]
                     is_auto_linked = True
                     auto_linked += 1
-                else:
-                    # Fuzzy match
-                    for comp_name, comp_id in company_map.items():
-                        if fuzz.ratio(company_name.lower(), comp_name.lower()) >= 85:
-                            application_id = comp_id
-                            is_auto_linked = True
-                            auto_linked += 1
-                            break
 
-                # Still no match — create a new application
-                if not application_id:
-                    position = classification.get("extracted_position") or "Unknown Position"
-                    initial_stage = StageEnum.INTERVIEW if intent == "interview" else StageEnum.APPLIED
-
-                    order_result = await db.execute(
-                        select(func.coalesce(func.max(Application.stage_order), -1)).where(
-                            Application.user_id == user_id,
-                            Application.stage == initial_stage,
-                        )
+        # Auto-create application from clear confirmations
+        if (
+            is_job
+            and intent == "application_confirmed"
+            and not application_id
+            and label == "inbox"
+        ):
+            company_name = classification.get("extracted_company")
+            if company_name and company_name not in company_map:
+                order_result = await db.execute(
+                    select(func.coalesce(func.max(Application.stage_order), -1)).where(
+                        Application.user_id == user_id,
+                        Application.stage == StageEnum.APPLIED,
                     )
-                    next_order = order_result.scalar_one() + 1
+                )
+                new_app = Application(
+                    user_id=user_id,
+                    company=company_name,
+                    position=classification.get("extracted_position") or "Unknown Position",
+                    stage=StageEnum.APPLIED,
+                    stage_order=order_result.scalar_one() + 1,
+                    applied_date=received_at.date(),
+                )
+                db.add(new_app)
+                await db.flush()
 
-                    new_app = Application(
-                        user_id=user_id,
-                        company=company_name,
-                        position=position,
-                        stage=initial_stage,
-                        stage_order=next_order,
-                        applied_date=received_at.date(),
-                    )
-                    db.add(new_app)
-                    await db.flush()
-
-                    application_id = new_app.id
-                    is_auto_linked = True
-                    company_map[company_name] = new_app.id
-                    tracked_companies.append(company_name)
-                    auto_created += 1
-
-                    # Add initial timeline event
-                    db.add(TimelineEvent(
-                        application_id=new_app.id,
-                        event_type=EventTypeEnum.APPLIED,
-                        title=f"Applied to {company_name}",
-                        description=f"Auto-detected from email: {subject[:100]}",
-                        event_date=received_at,
-                    ))
-                    timeline_events += 1
-
-        # Auto-update stage and add timeline events for existing applications
-        if application_id and intent in ("interview", "rejection", "offer"):
-            app_result = await db.execute(
-                select(Application).where(Application.id == application_id)
-            )
-            app = app_result.scalar_one_or_none()
-
-            if app and intent == "interview":
-                # Move to interview stage if not already past it
-                if app.stage in (StageEnum.SAVED, StageEnum.APPLIED, StageEnum.SCREENING):
-                    app.stage = StageEnum.INTERVIEW
-                    app.updated_at = datetime.now(timezone.utc)
-                    db.add(app)
-                    stage_updates += 1
-
-                # Build rich interview description from LLM details
-                interview_details = classification.get("interview_details") or {}
-                desc_parts = [f"Auto-detected from email: {subject[:100]}"]
-
-                interview_type = interview_details.get("type")
-                interview_date = interview_details.get("date")
-                interview_time = interview_details.get("time")
-                interview_tz = interview_details.get("timezone")
-                participants = interview_details.get("participants") or []
-                meeting_link = interview_details.get("meeting_link")
-                notes = interview_details.get("notes")
-
-                if interview_date:
-                    time_str = f"{interview_date}"
-                    if interview_time:
-                        time_str += f" at {interview_time}"
-                    if interview_tz:
-                        time_str += f" ({interview_tz})"
-                    desc_parts.append(f"Scheduled: {time_str}")
-
-                if participants:
-                    desc_parts.append(f"Participants: {', '.join(participants)}")
-
-                if meeting_link:
-                    desc_parts.append(f"Meeting link: {meeting_link}")
-
-                if notes:
-                    desc_parts.append(f"Notes: {notes}")
-
-                # Map interview type to event type
-                type_map = {
-                    "phone_screen": EventTypeEnum.PHONE_SCREEN,
-                    "technical": EventTypeEnum.TECHNICAL_INTERVIEW,
-                    "behavioral": EventTypeEnum.BEHAVIORAL_INTERVIEW,
-                    "onsite": EventTypeEnum.ONSITE,
-                    "assessment": EventTypeEnum.TAKE_HOME,
-                }
-                event_type = type_map.get(interview_type or "", EventTypeEnum.TECHNICAL_INTERVIEW)
-
-                title = "Interview scheduled"
-                if interview_type:
-                    type_labels = {
-                        "phone_screen": "Phone Screen",
-                        "technical": "Technical Interview",
-                        "behavioral": "Behavioral Interview",
-                        "onsite": "Onsite Interview",
-                        "assessment": "Assessment/Challenge",
-                        "other": "Interview",
-                    }
-                    title = f"{type_labels.get(interview_type, 'Interview')} scheduled"
+                application_id = new_app.id
+                is_auto_linked = True
+                company_map[company_name] = new_app.id
+                tracked_companies.append(company_name)
+                auto_created += 1
 
                 db.add(TimelineEvent(
-                    application_id=application_id,
-                    event_type=event_type,
-                    title=title,
-                    description="\n".join(desc_parts),
-                    event_date=received_at,
-                ))
-                timeline_events += 1
-
-            elif app and intent == "rejection":
-                if app.stage != StageEnum.REJECTED:
-                    app.stage = StageEnum.REJECTED
-                    app.updated_at = datetime.now(timezone.utc)
-                    db.add(app)
-                    stage_updates += 1
-
-                db.add(TimelineEvent(
-                    application_id=application_id,
-                    event_type=EventTypeEnum.REJECTION,
-                    title="Application rejected",
+                    application_id=new_app.id,
+                    event_type=EventTypeEnum.APPLIED,
+                    title=f"Applied to {company_name}",
                     description=f"Auto-detected from email: {subject[:100]}",
                     event_date=received_at,
                 ))
-                timeline_events += 1
 
-            elif app and intent == "offer":
-                if app.stage != StageEnum.OFFER:
-                    app.stage = StageEnum.OFFER
-                    app.updated_at = datetime.now(timezone.utc)
-                    db.add(app)
-                    stage_updates += 1
-
-                db.add(TimelineEvent(
-                    application_id=application_id,
-                    event_type=EventTypeEnum.OFFER,
-                    title="Offer received",
-                    description=f"Auto-detected from email: {subject[:100]}",
-                    event_date=received_at,
-                ))
-                timeline_events += 1
-
-        # Store the email
+        # Store email
         email_msg = EmailMessage(
             user_id=user_id,
             application_id=application_id,
@@ -546,26 +494,209 @@ async def sync_emails(
             thread_id=thread_id,
             subject=subject,
             from_address=from_address,
+            to_address=to_address,
             snippet=snippet,
             body_preview=snippet[:500] if snippet else None,
             received_at=received_at,
             is_auto_linked=is_auto_linked,
+            label=label,
+            is_read=is_read,
+            is_job_related=is_job,
+            intent=intent,
+            extracted_company=classification.get("extracted_company") if is_job else None,
+            extracted_position=classification.get("extracted_position") if is_job else None,
         )
         db.add(email_msg)
         new_count += 1
 
-    # Update last sync time
     account.last_sync_at = datetime.now(timezone.utc)
     db.add(account)
 
-    return {
-        "new_emails": new_count,
-        "auto_linked": auto_linked,
-        "auto_created": auto_created,
-        "stage_updates": stage_updates,
-        "timeline_events": timeline_events,
-        "llm_failures": 0,
-    }
+    return {"new_emails": new_count, "auto_linked": auto_linked, "auto_created": auto_created}
+
+
+async def fetch_email_body(user_id: uuid.UUID, email_id: uuid.UUID, db: AsyncSession) -> dict:
+    """Fetch full email body. Returns cached version if available."""
+    result = await db.execute(
+        select(EmailMessage).where(
+            EmailMessage.id == email_id, EmailMessage.user_id == user_id
+        )
+    )
+    email = result.scalar_one_or_none()
+    if not email:
+        raise ValueError("Email not found")
+
+    # Return cached body if available
+    if email.body_html or email.body_text:
+        return {"body_html": email.body_html, "body_text": email.body_text}
+
+    # Fetch from Gmail
+    account_result = await db.execute(
+        select(EmailAccount).where(
+            EmailAccount.user_id == user_id, EmailAccount.is_active == True  # noqa: E712
+        )
+    )
+    account = account_result.scalar_one_or_none()
+    if not account:
+        raise ValueError("Gmail not connected")
+
+    refresh_token = decrypt_token(account.encrypted_refresh_token)
+    service = _build_gmail_client(refresh_token)
+
+    msg = service.users().messages().get(
+        userId="me", id=email.gmail_message_id, format="full"
+    ).execute()
+
+    raw_html = _extract_raw_html(msg.get("payload", {}))
+    body_text = _extract_body_text(msg.get("payload", {}))
+
+    # Cache in DB
+    email.body_html = raw_html
+    email.body_text = body_text or _strip_html(raw_html) if raw_html else None
+    db.add(email)
+
+    return {"body_html": email.body_html, "body_text": email.body_text}
+
+
+async def send_email(
+    user_id: uuid.UUID, to: str, subject: str, body_html: str, db: AsyncSession
+) -> EmailMessage:
+    """Compose and send an email via Gmail."""
+    account_result = await db.execute(
+        select(EmailAccount).where(
+            EmailAccount.user_id == user_id, EmailAccount.is_active == True  # noqa: E712
+        )
+    )
+    account = account_result.scalar_one_or_none()
+    if not account:
+        raise ValueError("Gmail not connected")
+
+    refresh_token = decrypt_token(account.encrypted_refresh_token)
+    service = _build_gmail_client(refresh_token)
+
+    # Build MIME message
+    message = MIMEMultipart("alternative")
+    message["to"] = to
+    message["from"] = account.email_address
+    message["subject"] = subject
+    message.attach(MIMEText(body_html, "html"))
+
+    raw = base64.urlsafe_b64encode(message.as_bytes()).decode()
+    sent = service.users().messages().send(userId="me", body={"raw": raw}).execute()
+
+    # Store locally
+    email_msg = EmailMessage(
+        user_id=user_id,
+        gmail_message_id=sent["id"],
+        thread_id=sent.get("threadId", ""),
+        subject=subject,
+        from_address=account.email_address,
+        to_address=to,
+        snippet=body_html[:200],
+        body_html=body_html,
+        received_at=datetime.now(timezone.utc),
+        label="sent",
+        is_read=True,
+    )
+    db.add(email_msg)
+    await db.flush()
+    await db.refresh(email_msg)
+    return email_msg
+
+
+async def reply_to_email(
+    user_id: uuid.UUID, email_id: uuid.UUID, body_html: str, db: AsyncSession
+) -> EmailMessage:
+    """Reply to an email."""
+    # Get original email
+    result = await db.execute(
+        select(EmailMessage).where(
+            EmailMessage.id == email_id, EmailMessage.user_id == user_id
+        )
+    )
+    original = result.scalar_one_or_none()
+    if not original:
+        raise ValueError("Email not found")
+
+    account_result = await db.execute(
+        select(EmailAccount).where(
+            EmailAccount.user_id == user_id, EmailAccount.is_active == True  # noqa: E712
+        )
+    )
+    account = account_result.scalar_one_or_none()
+    if not account:
+        raise ValueError("Gmail not connected")
+
+    refresh_token = decrypt_token(account.encrypted_refresh_token)
+    service = _build_gmail_client(refresh_token)
+
+    # Build reply
+    reply_to = original.from_address
+    subject = original.subject
+    if not subject.lower().startswith("re:"):
+        subject = f"Re: {subject}"
+
+    message = MIMEMultipart("alternative")
+    message["to"] = reply_to
+    message["from"] = account.email_address
+    message["subject"] = subject
+    message["In-Reply-To"] = original.gmail_message_id
+    message["References"] = original.gmail_message_id
+    message.attach(MIMEText(body_html, "html"))
+
+    raw = base64.urlsafe_b64encode(message.as_bytes()).decode()
+    sent = service.users().messages().send(
+        userId="me", body={"raw": raw, "threadId": original.thread_id}
+    ).execute()
+
+    # Store locally
+    email_msg = EmailMessage(
+        user_id=user_id,
+        gmail_message_id=sent["id"],
+        thread_id=original.thread_id,
+        subject=subject,
+        from_address=account.email_address,
+        to_address=reply_to,
+        snippet=body_html[:200],
+        body_html=body_html,
+        received_at=datetime.now(timezone.utc),
+        label="sent",
+        is_read=True,
+    )
+    db.add(email_msg)
+    await db.flush()
+    await db.refresh(email_msg)
+    return email_msg
+
+
+async def trash_single_email(user_id: uuid.UUID, email_id: uuid.UUID, db: AsyncSession) -> bool:
+    """Trash a single email in Gmail and update local record."""
+    result = await db.execute(
+        select(EmailMessage).where(
+            EmailMessage.id == email_id, EmailMessage.user_id == user_id
+        )
+    )
+    email = result.scalar_one_or_none()
+    if not email:
+        return False
+
+    account_result = await db.execute(
+        select(EmailAccount).where(
+            EmailAccount.user_id == user_id, EmailAccount.is_active == True  # noqa: E712
+        )
+    )
+    account = account_result.scalar_one_or_none()
+    if account:
+        refresh_token = decrypt_token(account.encrypted_refresh_token)
+        service = _build_gmail_client(refresh_token)
+        try:
+            service.users().messages().trash(userId="me", id=email.gmail_message_id).execute()
+        except Exception:
+            pass
+
+    email.label = "trash"
+    db.add(email)
+    return True
 
 
 async def get_gmail_status(user_id: uuid.UUID, db: AsyncSession) -> dict:
@@ -588,6 +719,103 @@ async def get_gmail_status(user_id: uuid.UUID, db: AsyncSession) -> dict:
         "last_sync_at": account.last_sync_at,
         "total_emails": total,
     }
+
+
+async def search_gmail(user_id: uuid.UUID, query: str, db: AsyncSession) -> list[dict]:
+    """Search Gmail with a custom query and return results (without storing them)."""
+    result = await db.execute(
+        select(EmailAccount).where(
+            EmailAccount.user_id == user_id, EmailAccount.is_active == True  # noqa: E712
+        )
+    )
+    account = result.scalar_one_or_none()
+    if not account:
+        raise ValueError("Gmail not connected")
+
+    refresh_token = decrypt_token(account.encrypted_refresh_token)
+    service = _build_gmail_client(refresh_token)
+
+    messages_response = service.users().messages().list(
+        userId="me", q=query, maxResults=20
+    ).execute()
+
+    message_ids = [m["id"] for m in messages_response.get("messages", [])]
+    results = []
+
+    for msg_id in message_ids:
+        msg = service.users().messages().get(
+            userId="me", id=msg_id, format="metadata",
+            metadataHeaders=["Subject", "From", "Date"]
+        ).execute()
+
+        headers = {h["name"]: h["value"] for h in msg.get("payload", {}).get("headers", [])}
+        internal_date_ms = int(msg.get("internalDate", "0"))
+
+        # Check if already stored
+        existing = await db.execute(
+            select(EmailMessage).where(EmailMessage.gmail_message_id == msg_id)
+        )
+        is_stored = existing.scalar_one_or_none() is not None
+
+        results.append({
+            "gmail_message_id": msg_id,
+            "subject": headers.get("Subject", "(no subject)"),
+            "from_address": headers.get("From", ""),
+            "snippet": msg.get("snippet", ""),
+            "received_at": datetime.fromtimestamp(internal_date_ms / 1000, tz=timezone.utc).isoformat(),
+            "is_stored": is_stored,
+        })
+
+    return results
+
+
+async def import_gmail_email(
+    user_id: uuid.UUID, gmail_message_id: str, application_id: uuid.UUID | None, db: AsyncSession
+) -> EmailMessage:
+    """Import a specific Gmail email into the tracker and optionally link it."""
+    # Check if already stored
+    existing = await db.execute(
+        select(EmailMessage).where(EmailMessage.gmail_message_id == gmail_message_id)
+    )
+    if existing.scalar_one_or_none():
+        raise ValueError("Email already imported")
+
+    result = await db.execute(
+        select(EmailAccount).where(
+            EmailAccount.user_id == user_id, EmailAccount.is_active == True  # noqa: E712
+        )
+    )
+    account = result.scalar_one_or_none()
+    if not account:
+        raise ValueError("Gmail not connected")
+
+    refresh_token = decrypt_token(account.encrypted_refresh_token)
+    service = _build_gmail_client(refresh_token)
+
+    msg = service.users().messages().get(
+        userId="me", id=gmail_message_id, format="metadata",
+        metadataHeaders=["Subject", "From", "Date"]
+    ).execute()
+
+    headers = {h["name"]: h["value"] for h in msg.get("payload", {}).get("headers", [])}
+    internal_date_ms = int(msg.get("internalDate", "0"))
+
+    email_msg = EmailMessage(
+        user_id=user_id,
+        application_id=application_id,
+        gmail_message_id=gmail_message_id,
+        thread_id=msg.get("threadId", ""),
+        subject=headers.get("Subject", "(no subject)"),
+        from_address=headers.get("From", ""),
+        snippet=msg.get("snippet", ""),
+        body_preview=msg.get("snippet", "")[:500],
+        received_at=datetime.fromtimestamp(internal_date_ms / 1000, tz=timezone.utc),
+        is_auto_linked=False,
+    )
+    db.add(email_msg)
+    await db.flush()
+    await db.refresh(email_msg)
+    return email_msg
 
 
 async def trash_rejection_emails(user_id: uuid.UUID, db: AsyncSession) -> dict:
