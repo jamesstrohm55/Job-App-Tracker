@@ -11,10 +11,10 @@ export function Header({ user, onLogout }: HeaderProps) {
   const { sidebarOpen, toggleSidebar, theme, toggleTheme } = useUIStore()
 
   return (
-    <header className="sticky top-0 z-30 flex h-14 items-center justify-between border-b border-border bg-background/95 px-4 backdrop-blur supports-[backdrop-filter]:bg-background/60">
+    <header className="sticky top-0 z-30 flex h-14 items-center justify-between border-b border-border/50 bg-background/80 px-4 backdrop-blur-xl">
       <button
         onClick={toggleSidebar}
-        className="rounded-md p-2 text-muted-foreground hover:bg-accent hover:text-accent-foreground"
+        className="rounded-md p-2 text-muted-foreground transition-all duration-200 ease-out hover:bg-accent hover:text-accent-foreground active:scale-95"
       >
         {sidebarOpen ? (
           <PanelLeftClose className="h-4 w-4" />
@@ -26,7 +26,7 @@ export function Header({ user, onLogout }: HeaderProps) {
       <div className="flex items-center gap-3">
         <button
           onClick={toggleTheme}
-          className="rounded-md p-2 text-muted-foreground hover:bg-accent hover:text-accent-foreground"
+          className="rounded-md p-2 text-muted-foreground transition-all duration-200 ease-out hover:bg-accent hover:text-accent-foreground active:scale-95"
         >
           {theme === "light" ? (
             <Moon className="h-4 w-4" />
@@ -47,7 +47,7 @@ export function Header({ user, onLogout }: HeaderProps) {
             <span className="text-sm font-medium">{user.name}</span>
             <button
               onClick={onLogout}
-              className="rounded-md p-2 text-muted-foreground hover:bg-accent hover:text-accent-foreground"
+              className="rounded-md p-2 text-muted-foreground transition-all duration-200 ease-out hover:bg-accent hover:text-accent-foreground active:scale-95"
               title="Logout"
             >
               <LogOut className="h-4 w-4" />

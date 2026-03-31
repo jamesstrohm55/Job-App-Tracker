@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react"
 import { Navigate, Route, Routes, useNavigate } from "react-router-dom"
+import { Briefcase } from "lucide-react"
 import { AppShell } from "./components/layout/app-shell"
 import { BoardPage } from "./pages/board"
 import { ApplicationsPage } from "./pages/applications"
@@ -68,10 +69,38 @@ export function AppShellWrapper() {
     }
   }
 
-  if (loading) {
+  // Smooth transition: show loading splash, then fade into app
+  const [showApp, setShowApp] = useState(false)
+  const [splashExiting, setSplashExiting] = useState(false)
+
+  useEffect(() => {
+    if (!loading && user) {
+      // Brief delay for splash exit animation
+      setSplashExiting(true)
+      const timer = setTimeout(() => setShowApp(true), 400)
+      return () => clearTimeout(timer)
+    }
+  }, [loading, user])
+
+  if (loading || (!showApp && user)) {
     return (
-      <div className="flex min-h-screen items-center justify-center">
-        <p className="text-muted-foreground">Loading...</p>
+      <div className={`flex min-h-screen items-center justify-center bg-background transition-opacity duration-300 ${splashExiting ? "opacity-0" : "opacity-100"}`}>
+        <div className="flex flex-col items-center gap-4 animate-fade-in">
+          <div className="relative">
+            <div className="absolute -inset-4 rounded-3xl bg-gradient-to-br from-blue-600/20 to-indigo-600/20 blur-xl animate-pulse" />
+            <div className="relative flex h-14 w-14 items-center justify-center rounded-2xl bg-gradient-to-br from-blue-600 to-indigo-600 shadow-lg shadow-blue-500/25">
+              <Briefcase className="h-7 w-7 text-white" />
+            </div>
+          </div>
+          <h1 className="bg-gradient-to-r from-blue-500 via-indigo-500 to-violet-500 bg-clip-text text-2xl font-bold tracking-tight text-transparent animate-gradient-x">
+            HireTrackr
+          </h1>
+          <div className="flex items-center gap-2">
+            <div className="h-1.5 w-1.5 rounded-full bg-blue-500 animate-bounce" style={{ animationDelay: "0ms" }} />
+            <div className="h-1.5 w-1.5 rounded-full bg-indigo-500 animate-bounce" style={{ animationDelay: "150ms" }} />
+            <div className="h-1.5 w-1.5 rounded-full bg-violet-500 animate-bounce" style={{ animationDelay: "300ms" }} />
+          </div>
+        </div>
       </div>
     )
   }

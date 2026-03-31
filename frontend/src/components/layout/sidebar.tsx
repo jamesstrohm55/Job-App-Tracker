@@ -25,17 +25,24 @@ export function Sidebar() {
   return (
     <aside
       className={cn(
-        "fixed left-0 top-0 z-40 h-screen border-r border-sidebar-border bg-sidebar transition-all duration-300",
+        "fixed left-0 top-0 z-40 h-screen border-r border-sidebar-border/50 bg-sidebar/95 backdrop-blur-xl transition-all duration-300",
         sidebarOpen ? "w-64" : "w-16"
       )}
     >
       <div className="flex h-14 items-center border-b border-sidebar-border px-4">
         {sidebarOpen ? (
-          <h1 className="text-lg font-semibold text-sidebar-foreground">
-            Job Tracker
-          </h1>
+          <div className="flex items-center gap-2.5">
+            <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-gradient-to-br from-blue-600 to-indigo-600">
+              <Briefcase className="h-3.5 w-3.5 text-white" />
+            </div>
+            <h1 className="bg-gradient-to-r from-blue-500 to-indigo-500 bg-clip-text text-lg font-bold tracking-tight text-transparent">
+              HireTrackr
+            </h1>
+          </div>
         ) : (
-          <Briefcase className="mx-auto h-5 w-5 text-sidebar-foreground" />
+          <div className="mx-auto flex h-7 w-7 items-center justify-center rounded-lg bg-gradient-to-br from-blue-600 to-indigo-600">
+            <Briefcase className="h-3.5 w-3.5 text-white" />
+          </div>
         )}
       </div>
 
@@ -47,10 +54,10 @@ export function Sidebar() {
               key={item.path}
               to={item.path}
               className={cn(
-                "flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors",
+                "flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-all duration-200 ease-out",
                 isActive
-                  ? "bg-sidebar-accent text-sidebar-accent-foreground"
-                  : "text-sidebar-foreground/70 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
+                  ? "bg-sidebar-accent text-sidebar-accent-foreground shadow-sm"
+                  : "text-sidebar-foreground/70 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground hover:translate-x-0.5"
               )}
             >
               <item.icon className="h-4 w-4 shrink-0" />

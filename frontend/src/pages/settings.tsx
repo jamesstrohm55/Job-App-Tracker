@@ -1,14 +1,35 @@
+import { useState, useEffect, useRef } from "react"
 import { format } from "date-fns"
 import { Mail, RefreshCw, Trash2, Unplug } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { useGmailStatus, useDisconnectGmail, useSyncEmails, useTrashRejectionEmails } from "@/hooks/use-emails"
 import { getGmailAuthUrl } from "@/api/emails"
 
+function useSyncTimer(isSyncing: boolean) {
+  const [elapsed, setElapsed] = useState(0)
+  const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
+
+  useEffect(() => {
+    if (isSyncing) {
+      setElapsed(0)
+      intervalRef.current = setInterval(() => setElapsed((t) => t + 1), 1000)
+    } else {
+      if (intervalRef.current) clearInterval(intervalRef.current)
+    }
+    return () => { if (intervalRef.current) clearInterval(intervalRef.current) }
+  }, [isSyncing])
+
+  const mins = Math.floor(elapsed / 60)
+  const secs = elapsed % 60
+  return mins > 0 ? `${mins}m ${secs}s` : `${secs}s`
+}
+
 export function SettingsPage() {
   const { data: status, isLoading } = useGmailStatus()
   const disconnectGmail = useDisconnectGmail()
   const syncEmails = useSyncEmails()
   const trashRejections = useTrashRejectionEmails()
+  const syncTimer = useSyncTimer(syncEmails.isPending)
 
   const handleConnectGmail = async () => {
     try {
@@ -57,6 +78,15 @@ export function SettingsPage() {
               </div>
             </div>
 
+            {!status.last_sync_at && (
+              <div className="rounded-md border border-amber-200 bg-amber-50 p-3 text-sm dark:border-amber-800 dark:bg-amber-950">
+                <p className="font-medium text-amber-800 dark:text-amber-200">First sync may take 2-4 minutes</p>
+                <p className="text-xs text-amber-700 dark:text-amber-300">
+                  We'll fetch all your emails from the last 15 days and classify them. After that, syncs are near-instant.
+                </p>
+              </div>
+            )}
+
             <div className="flex gap-2">
               <Button
                 size="sm"
@@ -64,7 +94,7 @@ export function SettingsPage() {
                 disabled={syncEmails.isPending}
               >
                 <RefreshCw className={`h-4 w-4 ${syncEmails.isPending ? "animate-spin" : ""}`} />
-                {syncEmails.isPending ? "Syncing..." : "Sync Now"}
+                {syncEmails.isPending ? `Syncing... ${syncTimer}` : "Sync Now"}
               </Button>
               <Button
                 size="sm"
@@ -102,13 +132,16 @@ export function SettingsPage() {
             {syncEmails.data && (
               <div className="rounded-md bg-muted p-3 text-sm space-y-1">
                 <div className="flex items-center justify-between">
-                  <p><span className="font-medium">{syncEmails.data.new_emails}</span> new emails synced</p>
+                  <p><span className="font-medium">{(syncEmails.data as Record<string, number>).new_emails}</span> new emails synced</p>
                   <span className="text-xs text-muted-foreground">
-                    {syncEmails.data.sync_duration_seconds}s
+                    {(syncEmails.data as Record<string, number>).sync_duration_seconds}s
                   </span>
                 </div>
-                {syncEmails.data.auto_linked > 0 && (
-                  <p><span className="font-medium">{syncEmails.data.auto_linked}</span> emails auto-linked</p>
+                {(syncEmails.data as Record<string, number>).auto_linked > 0 && (
+                  <p><span className="font-medium">{(syncEmails.data as Record<string, number>).auto_linked}</span> emails auto-linked</p>
+                )}
+                {(syncEmails.data as Record<string, number>).auto_created > 0 && (
+                  <p><span className="font-medium">{(syncEmails.data as Record<string, number>).auto_created}</span> applications auto-created</p>
                 )}
               </div>
             )}

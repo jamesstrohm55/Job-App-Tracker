@@ -14,7 +14,7 @@ export function AppShell({ user, onLogout }: AppShellProps) {
   const sidebarOpen = useUIStore((s) => s.sidebarOpen)
 
   return (
-    <div className="min-h-screen bg-background">
+    <div className="min-h-screen bg-background animate-fade-in">
       <Sidebar />
       <div
         className={cn(
@@ -23,7 +23,7 @@ export function AppShell({ user, onLogout }: AppShellProps) {
         )}
       >
         <Header user={user} onLogout={onLogout} />
-        <main className="p-6">
+        <main className="p-6 page-enter">
           <Outlet />
         </main>
       </div>

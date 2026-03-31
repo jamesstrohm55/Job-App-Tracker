@@ -60,9 +60,16 @@ export function BoardPage() {
     }
   }
 
+  // Interview detail dialog
+  const [interviewDetailApp, setInterviewDetailApp] = useState<Application | null>(null)
+
   const handleCardClick = (app: Application) => {
-    setEditingApp(app)
-    setFormOpen(true)
+    if (app.stage === "interview" && app.interview_info) {
+      setInterviewDetailApp(app)
+    } else {
+      setEditingApp(app)
+      setFormOpen(true)
+    }
   }
 
   const handleMove = (applicationId: string, newStage: Stage, newOrder: number) => {
@@ -130,9 +137,9 @@ export function BoardPage() {
 
       {/* Unified notification area */}
       {hasActions && (
-        <div className="space-y-2">
+        <div className="space-y-2 stagger-children">
           {meetings.map((action) => (
-            <div key={action.email_id} className="flex items-center gap-3 rounded-lg border border-blue-200 bg-blue-50 p-3 dark:border-blue-800 dark:bg-blue-950">
+            <div key={action.email_id} className="flex items-center gap-3 rounded-xl border border-blue-200/50 bg-blue-50/80 backdrop-blur-sm p-3 dark:border-blue-800/50 dark:bg-blue-950/60 animate-slide-down">
               <CalendarCheck className="h-4 w-4 shrink-0 text-blue-600 dark:text-blue-400" />
               <div className="min-w-0 flex-1">
                 <p className="text-sm font-medium text-blue-800 dark:text-blue-200">Is this an interview?</p>
@@ -163,7 +170,7 @@ export function BoardPage() {
           ))}
 
           {pastInterviews.map((action) => (
-            <div key={action.application_id} className="flex items-center gap-3 rounded-lg border border-amber-200 bg-amber-50 p-3 dark:border-amber-800 dark:bg-amber-950">
+            <div key={action.application_id} className="flex items-center gap-3 rounded-xl border border-amber-200/50 bg-amber-50/80 backdrop-blur-sm p-3 dark:border-amber-800/50 dark:bg-amber-950/60 animate-slide-down">
               <AlertTriangle className="h-4 w-4 shrink-0 text-amber-600 dark:text-amber-400" />
               <div className="min-w-0 flex-1">
                 <p className="text-sm font-medium text-amber-800 dark:text-amber-200">Interview passed — how did it go?</p>
@@ -181,7 +188,7 @@ export function BoardPage() {
           ))}
 
           {rejections.map((action) => (
-            <div key={action.email_id} className="flex items-center gap-3 rounded-lg border border-red-200 bg-red-50 p-3 dark:border-red-800 dark:bg-red-950">
+            <div key={action.email_id} className="flex items-center gap-3 rounded-xl border border-red-200/50 bg-red-50/80 backdrop-blur-sm p-3 dark:border-red-800/50 dark:bg-red-950/60 animate-slide-down">
               <X className="h-4 w-4 shrink-0 text-red-600 dark:text-red-400" />
               <div className="min-w-0 flex-1">
                 <p className="text-sm font-medium text-red-800 dark:text-red-200">Rejection detected for {action.company}</p>
@@ -306,6 +313,119 @@ export function BoardPage() {
           </div>
         </DialogContent>
       </Dialog>
+
+      {/* Interview Detail Dialog */}
+      <Dialog open={!!interviewDetailApp} onOpenChange={(open) => !open && setInterviewDetailApp(null)}>
+        <DialogContent onClose={() => setInterviewDetailApp(null)} className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Interview Details</DialogTitle>
+          </DialogHeader>
+          {interviewDetailApp && (
+            <InterviewDetailContent app={interviewDetailApp} />
+          )}
+        </DialogContent>
+      </Dialog>
+    </div>
+  )
+}
+
+function InterviewDetailContent({ app }: { app: Application }) {
+  const info = app.interview_info
+  if (!info) return <p className="text-sm text-muted-foreground">No interview details available.</p>
+
+  // Parse details from description
+  const desc = info.description || ""
+  const lines = desc.split("\n")
+
+  const scheduledLine = lines.find((l) => l.startsWith("Scheduled:"))
+  const participantsLine = lines.find((l) => l.startsWith("Participants:"))
+  const meetingLinkLine = lines.find((l) => l.startsWith("Meeting link:"))
+  const scheduled = scheduledLine?.replace("Scheduled: ", "")
+  const participants = participantsLine?.replace("Participants: ", "")
+  const meetingLink = meetingLinkLine?.replace("Meeting link: ", "")
+
+  return (
+    <div className="space-y-4">
+      {/* Company + Position */}
+      <div className="rounded-xl border border-border/50 bg-gradient-to-br from-blue-50/50 to-indigo-50/50 dark:from-blue-950/30 dark:to-indigo-950/30 p-4">
+        <p className="text-lg font-bold">{app.company}</p>
+        <p className="text-sm text-muted-foreground">{app.position}</p>
+      </div>
+
+      {/* Interview type */}
+      {info.title && (
+        <div className="flex items-center gap-2">
+          <span className="rounded-md bg-blue-100 px-2.5 py-1 text-sm font-medium text-blue-700 dark:bg-blue-900 dark:text-blue-300">
+            {info.title}
+          </span>
+        </div>
+      )}
+
+      {/* Details grid */}
+      <div className="space-y-3">
+        {scheduled && (
+          <div className="flex items-start gap-3">
+            <span className="mt-0.5 text-muted-foreground">
+              <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+              </svg>
+            </span>
+            <div>
+              <p className="text-xs font-medium text-muted-foreground">Date & Time</p>
+              <p className="text-sm">{scheduled}</p>
+            </div>
+          </div>
+        )}
+
+        {participants && (
+          <div className="flex items-start gap-3">
+            <span className="mt-0.5 text-muted-foreground">
+              <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0z" />
+              </svg>
+            </span>
+            <div>
+              <p className="text-xs font-medium text-muted-foreground">Participants</p>
+              <p className="text-sm">{participants}</p>
+            </div>
+          </div>
+        )}
+
+        {meetingLink && (
+          <div className="flex items-start gap-3">
+            <span className="mt-0.5 text-muted-foreground">
+              <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" />
+              </svg>
+            </span>
+            <div>
+              <p className="text-xs font-medium text-muted-foreground">Meeting Link</p>
+              <a
+                href={meetingLink}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-1.5 rounded-md bg-blue-100 px-3 py-1.5 text-sm font-medium text-blue-700 transition-colors hover:bg-blue-200 dark:bg-blue-900 dark:text-blue-300 dark:hover:bg-blue-800"
+              >
+                Join Meeting
+              </a>
+            </div>
+          </div>
+        )}
+
+        {app.applied_date && (
+          <div className="flex items-start gap-3">
+            <span className="mt-0.5 text-muted-foreground">
+              <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+              </svg>
+            </span>
+            <div>
+              <p className="text-xs font-medium text-muted-foreground">Applied</p>
+              <p className="text-sm">{app.applied_date}</p>
+            </div>
+          </div>
+        )}
+      </div>
     </div>
   )
 }

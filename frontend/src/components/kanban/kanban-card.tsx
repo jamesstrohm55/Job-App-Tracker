@@ -59,7 +59,7 @@ export function KanbanCard({ application, onClick, onTrashEmails }: KanbanCardPr
         ref={setNodeRef}
         style={style}
         className={cn(
-          "group cursor-pointer rounded-md border px-2.5 py-2 shadow-sm transition-shadow hover:shadow-md",
+          "group cursor-pointer rounded-md border px-2.5 py-2 shadow-sm transition-all duration-200 ease-out hover:shadow-md hover:-translate-y-0.5",
           isPastInterview
             ? "border-amber-300 bg-amber-50/50 dark:border-amber-800 dark:bg-amber-950/30"
             : "border-blue-200 bg-blue-50/50 dark:border-blue-900 dark:bg-blue-950/30",
@@ -134,7 +134,7 @@ export function KanbanCard({ application, onClick, onTrashEmails }: KanbanCardPr
         ref={setNodeRef}
         style={style}
         className={cn(
-          "group cursor-pointer rounded-md border border-red-200 dark:border-red-900 bg-red-50/30 dark:bg-red-950/20 px-2 py-1.5 shadow-sm transition-shadow hover:shadow-md",
+          "group cursor-pointer rounded-md border border-red-200 dark:border-red-900 bg-red-50/30 dark:bg-red-950/20 px-2 py-1.5 shadow-sm transition-all duration-200 ease-out hover:shadow-md hover:-translate-y-0.5",
           isDragging && "opacity-50 shadow-lg"
         )}
         onClick={onClick}
@@ -178,7 +178,7 @@ export function KanbanCard({ application, onClick, onTrashEmails }: KanbanCardPr
       ref={setNodeRef}
       style={style}
       className={cn(
-        "group flex items-center gap-2 cursor-pointer rounded-md border border-border bg-card px-2 py-1.5 shadow-sm transition-shadow hover:shadow-md",
+        "group flex items-center gap-2 cursor-pointer rounded-lg border border-border/50 bg-card/80 backdrop-blur-sm px-2 py-1.5 shadow-sm transition-all duration-200 ease-out hover:shadow-md hover:-translate-y-0.5",
         isDragging && "opacity-50 shadow-lg"
       )}
       onClick={onClick}

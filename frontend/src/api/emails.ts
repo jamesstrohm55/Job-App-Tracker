@@ -245,3 +245,14 @@ export async function trashEmail(emailId: string): Promise<void> {
 export async function markEmailRead(emailId: string): Promise<void> {
   await api.patch(`/emails/${emailId}/read`)
 }
+
+export async function batchEmailAction(
+  emailIds: string[],
+  action: "mark_read" | "mark_unread" | "trash" | "dismiss"
+): Promise<{ affected: number }> {
+  const { data } = await api.post<{ affected: number }>("/emails/batch", {
+    email_ids: emailIds,
+    action,
+  })
+  return data
+}

@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react"
+import { useEffect, useRef, useState, useCallback } from "react"
 import { format } from "date-fns"
 import { Reply, Trash2, Link2, Mail } from "lucide-react"
 import { Button } from "@/components/ui/button"
@@ -14,6 +14,54 @@ interface EmailDetailProps {
   onLink: () => void
 }
 
+function wrapHtmlForIframe(html: string, isDark: boolean): string {
+  // Always render email on a light background for readability
+  // This ensures emails are readable in both light and dark mode
+  return `
+    <!DOCTYPE html>
+    <html>
+    <head>
+      <meta charset="utf-8">
+      <base target="_blank">
+      <style>
+        body {
+          margin: 0;
+          padding: 16px;
+          font-family: -apple-system, system-ui, sans-serif;
+          font-size: 14px;
+          line-height: 1.5;
+          word-wrap: break-word;
+          overflow-wrap: break-word;
+          background-color: ${isDark ? "#1e1e2e" : "#ffffff"};
+          color: ${isDark ? "#e0e0e0" : "#1a1a1a"};
+        }
+        img { max-width: 100%; height: auto; }
+        a { color: ${isDark ? "#60a5fa" : "#2563eb"}; }
+        table { max-width: 100% !important; }
+        pre { white-space: pre-wrap; }
+        /* Force readable text on emails that set their own colors */
+        * { max-width: 100% !important; }
+      </style>
+    </head>
+    <body>
+      ${html}
+      <script>
+        function reportHeight() {
+          var h = document.documentElement.scrollHeight;
+          window.parent.postMessage({ type: 'iframe-height', height: h }, '*');
+        }
+        window.addEventListener('load', function() {
+          reportHeight();
+          setTimeout(reportHeight, 500);
+          setTimeout(reportHeight, 1500);
+        });
+        new MutationObserver(reportHeight).observe(document.body, { childList: true, subtree: true });
+      </script>
+    </body>
+    </html>
+  `
+}
+
 export function EmailDetail({
   email,
   bodyHtml,
@@ -23,35 +71,29 @@ export function EmailDetail({
   onTrash,
   onLink,
 }: EmailDetailProps) {
+  const isDark = document.documentElement.classList.contains("dark")
   const iframeRef = useRef<HTMLIFrameElement>(null)
+  const [iframeHeight, setIframeHeight] = useState(400)
 
-  // Auto-resize iframe to content
+  // Listen for height messages from iframe
+  const handleMessage = useCallback((event: MessageEvent) => {
+    if (event.data?.type === "iframe-height" && typeof event.data.height === "number") {
+      setIframeHeight(Math.max(event.data.height, 200))
+    }
+  }, [])
+
   useEffect(() => {
-    const iframe = iframeRef.current
-    if (!iframe || !bodyHtml) return
+    window.addEventListener("message", handleMessage)
+    return () => window.removeEventListener("message", handleMessage)
+  }, [handleMessage])
 
-    const resizeObserver = new ResizeObserver(() => {
-      if (iframe.contentDocument?.body) {
-        iframe.style.height = iframe.contentDocument.body.scrollHeight + 20 + "px"
-      }
-    })
-
-    const handleLoad = () => {
-      if (iframe.contentDocument?.body) {
-        iframe.style.height = iframe.contentDocument.body.scrollHeight + 20 + "px"
-        resizeObserver.observe(iframe.contentDocument.body)
-      }
-    }
-
-    iframe.addEventListener("load", handleLoad)
-    return () => {
-      iframe.removeEventListener("load", handleLoad)
-      resizeObserver.disconnect()
-    }
-  }, [bodyHtml])
+  // Reset height when email changes
+  useEffect(() => {
+    setIframeHeight(400)
+  }, [email.id])
 
   return (
-    <div className="flex h-full flex-col">
+    <div className="flex h-full flex-col animate-slide-in-right">
       {/* Header */}
       <div className="border-b border-border p-4">
         <h2 className="text-lg font-semibold">{email.subject}</h2>
@@ -81,7 +123,6 @@ export function EmailDetail({
           </div>
         </div>
 
-        {/* Job badge */}
         {email.is_job_related && email.intent && (
           <div className="mt-2 flex items-center gap-2">
             <span className="rounded bg-muted px-2 py-0.5 text-xs text-muted-foreground">
@@ -97,7 +138,7 @@ export function EmailDetail({
       </div>
 
       {/* Body */}
-      <div className="flex-1 overflow-y-auto p-4">
+      <div className="flex-1 overflow-y-auto">
         {bodyLoading ? (
           <div className="flex items-center justify-center py-20">
             <p className="text-sm text-muted-foreground">Loading email...</p>
@@ -105,13 +146,13 @@ export function EmailDetail({
         ) : bodyHtml ? (
           <iframe
             ref={iframeRef}
-            sandbox=""
-            srcDoc={bodyHtml}
+            sandbox="allow-scripts allow-popups"
+            srcDoc={wrapHtmlForIframe(bodyHtml, isDark)}
             className="w-full border-0"
-            style={{ minHeight: 200 }}
+            style={{ height: iframeHeight }}
           />
         ) : bodyText ? (
-          <pre className="whitespace-pre-wrap text-sm">{bodyText}</pre>
+          <pre className="whitespace-pre-wrap p-4 text-sm">{bodyText}</pre>
         ) : (
           <div className="flex items-center justify-center py-20">
             <div className="text-center">

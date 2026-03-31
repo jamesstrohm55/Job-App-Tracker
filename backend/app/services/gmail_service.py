@@ -446,10 +446,20 @@ async def sync_all_emails(user_id: uuid.UUID, db: AsyncSession) -> dict:
                     is_auto_linked = True
                     auto_linked += 1
 
-        # Auto-create application from clear confirmations
+        # Auto-create application from CLEAR confirmations only
+        # Only "sent to" emails and known ATS confirmations — not general "application" mentions
+        is_clear_confirmation = (
+            intent == "application_confirmed"
+            and (
+                "sent to" in subject.lower()  # LinkedIn "your application was sent to X"
+                or "application received" in subject.lower()  # ATS confirmations
+                or "thank you for applying" in snippet.lower()  # Direct company confirmations
+                or classification.get("confidence") == "high"  # ATS domain + company match
+            )
+        )
         if (
             is_job
-            and intent == "application_confirmed"
+            and is_clear_confirmation
             and not application_id
             and label == "inbox"
         ):
@@ -482,6 +492,47 @@ async def sync_all_emails(user_id: uuid.UUID, db: AsyncSession) -> dict:
                     application_id=new_app.id,
                     event_type=EventTypeEnum.APPLIED,
                     title=f"Applied to {company_name}",
+                    description=f"Auto-detected from email: {subject[:100]}",
+                    event_date=received_at,
+                ))
+
+        # Auto-create application from rejection emails
+        # If we got rejected, we clearly applied — create it in Rejected stage
+        if (
+            is_job
+            and intent == "rejection"
+            and not application_id
+            and label == "inbox"
+        ):
+            company_name = classification.get("extracted_company")
+            if company_name and company_name not in company_map:
+                order_result = await db.execute(
+                    select(func.coalesce(func.max(Application.stage_order), -1)).where(
+                        Application.user_id == user_id,
+                        Application.stage == StageEnum.REJECTED,
+                    )
+                )
+                new_app = Application(
+                    user_id=user_id,
+                    company=company_name,
+                    position=classification.get("extracted_position") or "Unknown Position",
+                    stage=StageEnum.REJECTED,
+                    stage_order=order_result.scalar_one() + 1,
+                    applied_date=received_at.date(),
+                )
+                db.add(new_app)
+                await db.flush()
+
+                application_id = new_app.id
+                is_auto_linked = True
+                company_map[company_name] = new_app.id
+                tracked_companies.append(company_name)
+                auto_created += 1
+
+                db.add(TimelineEvent(
+                    application_id=new_app.id,
+                    event_type=EventTypeEnum.REJECTION,
+                    title=f"Rejected by {company_name}",
                     description=f"Auto-detected from email: {subject[:100]}",
                     event_date=received_at,
                 ))

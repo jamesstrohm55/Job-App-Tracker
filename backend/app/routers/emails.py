@@ -24,7 +24,9 @@ from app.schemas.email import (
     PendingAction,
     PendingActionsResponse,
 )
+from app.services.encryption import decrypt_token
 from app.services.gmail_service import (
+    _build_gmail_client,
     connect_gmail,
     disconnect_gmail,
     fetch_email_body,
@@ -263,6 +265,71 @@ async def mark_read(
     email.is_read = True
     db.add(email)
     return {"ok": True}
+
+
+# ── Batch Operations ──
+
+class BatchActionRequest(BaseModel):
+    email_ids: list[uuid.UUID]
+    action: str  # "mark_read", "mark_unread", "trash", "dismiss"
+
+
+@router.post("/batch")
+async def batch_action(
+    body: BatchActionRequest,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Perform batch operations on multiple emails."""
+    if not body.email_ids:
+        return {"ok": True, "affected": 0}
+
+    result = await db.execute(
+        select(EmailMessage).where(
+            EmailMessage.id.in_(body.email_ids),
+            EmailMessage.user_id == user.id,
+        )
+    )
+    emails = list(result.scalars().all())
+
+    if body.action == "mark_read":
+        for email in emails:
+            email.is_read = True
+            db.add(email)
+    elif body.action == "mark_unread":
+        for email in emails:
+            email.is_read = False
+            db.add(email)
+    elif body.action == "trash":
+        # Also trash in Gmail
+        account_result = await db.execute(
+            select(EmailAccount).where(
+                EmailAccount.user_id == user.id, EmailAccount.is_active == True  # noqa: E712
+            )
+        )
+        account = account_result.scalar_one_or_none()
+        service = None
+        if account:
+            try:
+                refresh_token = decrypt_token(account.encrypted_refresh_token)
+                service = _build_gmail_client(refresh_token)
+            except Exception:
+                pass
+
+        for email in emails:
+            email.label = "trash"
+            db.add(email)
+            if service:
+                try:
+                    service.users().messages().trash(userId="me", id=email.gmail_message_id).execute()
+                except Exception:
+                    pass
+    elif body.action == "dismiss":
+        for email in emails:
+            email.is_dismissed = True
+            db.add(email)
+
+    return {"ok": True, "affected": len(emails)}
 
 
 # ── Pending Actions (unified notifications for the board) ──

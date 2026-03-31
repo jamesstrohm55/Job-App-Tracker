@@ -10,7 +10,7 @@ import {
   getPendingActions,
   linkEmail,
   listEmails,
-  syncEmails,
+  syncAllEmails,
   trashApplicationEmails,
   trashRejectionEmails,
   unlinkEmail,
@@ -98,7 +98,7 @@ export function useDisconnectGmail() {
 export function useSyncEmails() {
   const queryClient = useQueryClient()
   return useMutation({
-    mutationFn: () => syncEmails(),
+    mutationFn: () => syncAllEmails(),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["emails"] })
       queryClient.invalidateQueries({ queryKey: ["email-suggestions"] })

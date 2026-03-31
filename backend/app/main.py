@@ -13,7 +13,7 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(
-    title="Job Application Tracker",
+    title="HireTrackr",
     version="0.1.0",
     lifespan=lifespan,
 )

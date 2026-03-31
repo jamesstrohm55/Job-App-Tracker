@@ -1,5 +1,5 @@
-import { useState, useEffect } from "react"
-import { RefreshCw, Search, PenSquare, Mail } from "lucide-react"
+import { useState, useEffect, useRef } from "react"
+import { RefreshCw, Search, PenSquare, Mail, CheckSquare, Trash2, MailOpen, X } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { EmailList } from "@/components/emails/email-list"
@@ -13,6 +13,7 @@ import {
   replyToEmail,
   trashEmail,
   markEmailRead,
+  batchEmailAction,
   type InboxItem,
   type InboxResponse,
 } from "@/api/emails"
@@ -40,11 +41,71 @@ export function EmailsPage() {
   const [inboxData, setInboxData] = useState<InboxResponse | null>(null)
   const [loading, setLoading] = useState(false)
   const [syncing, setSyncing] = useState(false)
+  const [syncElapsed, setSyncElapsed] = useState(0)
+  const syncIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
+
+  useEffect(() => {
+    if (syncing) {
+      setSyncElapsed(0)
+      syncIntervalRef.current = setInterval(() => setSyncElapsed((t) => t + 1), 1000)
+    } else {
+      if (syncIntervalRef.current) clearInterval(syncIntervalRef.current)
+    }
+    return () => { if (syncIntervalRef.current) clearInterval(syncIntervalRef.current) }
+  }, [syncing])
+
+  const syncTimerText = syncElapsed >= 60
+    ? `${Math.floor(syncElapsed / 60)}m ${syncElapsed % 60}s`
+    : `${syncElapsed}s`
 
   const [selectedEmail, setSelectedEmail] = useState<InboxItem | null>(null)
   const [bodyHtml, setBodyHtml] = useState<string | null>(null)
   const [bodyText, setBodyText] = useState<string | null>(null)
   const [bodyLoading, setBodyLoading] = useState(false)
+
+  // Batch selection
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
+  const [batchLoading, setBatchLoading] = useState(false)
+
+  const toggleSelect = (id: string) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+  }
+
+  const selectAll = () => {
+    if (!inboxData) return
+    if (selectedIds.size === inboxData.items.length) {
+      setSelectedIds(new Set())
+    } else {
+      setSelectedIds(new Set(inboxData.items.map((e) => e.id)))
+    }
+  }
+
+  const handleBatch = async (action: "mark_read" | "mark_unread" | "trash") => {
+    if (selectedIds.size === 0) return
+    setBatchLoading(true)
+    try {
+      const result = await batchEmailAction(Array.from(selectedIds), action)
+      toast.success(`${result.affected} email(s) updated`)
+      setSelectedIds(new Set())
+      // Refresh inbox
+      const params: Record<string, string | number> = { page, size: 50 }
+      if (activeTab === "inbox") params.label = "inbox"
+      else if (activeTab === "job") params.label = "job"
+      else if (activeTab === "sent") params.label = "sent"
+      else { params.label = "all"; params.category = activeTab }
+      if (search) params.search = search
+      getInbox(params as Parameters<typeof getInbox>[0]).then(setInboxData)
+    } catch {
+      toast.error("Batch action failed")
+    } finally {
+      setBatchLoading(false)
+    }
+  }
 
   const [composeOpen, setComposeOpen] = useState(false)
   const [composeSending, setComposeSending] = useState(false)
@@ -196,24 +257,67 @@ export function EmailsPage() {
     <div className="flex h-[calc(100vh-7.5rem)] flex-col -mx-6 -mb-6">
       {/* Toolbar */}
       <div className="flex items-center gap-2 border-b border-border px-4 py-2">
-        <Button size="sm" onClick={() => { setReplyTo(null); setComposeOpen(true) }}>
-          <PenSquare className="h-4 w-4" />
-          Compose
-        </Button>
-        <Button size="sm" variant="outline" onClick={handleSync} disabled={syncing}>
-          <RefreshCw className={cn("h-4 w-4", syncing && "animate-spin")} />
-          {syncing ? "Syncing..." : "Sync"}
-        </Button>
-        <div className="relative flex-1 max-w-xs">
-          <Search className="absolute left-2.5 top-2 h-4 w-4 text-muted-foreground" />
-          <Input
-            placeholder="Search emails..."
-            value={search}
-            onChange={(e) => { setSearch(e.target.value); setPage(1) }}
-            className="h-8 pl-8 text-sm"
-          />
-        </div>
+        {selectedIds.size > 0 ? (
+          /* Batch action toolbar */
+          <>
+            <Button size="sm" variant="ghost" onClick={() => setSelectedIds(new Set())}>
+              <X className="h-4 w-4" />
+            </Button>
+            <span className="text-sm font-medium">{selectedIds.size} selected</span>
+            <div className="h-4 w-px bg-border" />
+            <Button size="sm" variant="outline" onClick={selectAll}>
+              <CheckSquare className="h-4 w-4" />
+              {selectedIds.size === (inboxData?.items.length ?? 0) ? "Deselect All" : "Select All"}
+            </Button>
+            <Button size="sm" variant="outline" onClick={() => handleBatch("mark_read")} disabled={batchLoading}>
+              <MailOpen className="h-4 w-4" />
+              Mark Read
+            </Button>
+            <Button size="sm" variant="outline" onClick={() => handleBatch("mark_unread")} disabled={batchLoading}>
+              <Mail className="h-4 w-4" />
+              Mark Unread
+            </Button>
+            <Button size="sm" variant="outline" className="border-red-300 text-red-700 hover:bg-red-50 dark:border-red-800 dark:text-red-400"
+              onClick={() => handleBatch("trash")} disabled={batchLoading}>
+              <Trash2 className="h-4 w-4" />
+              Trash
+            </Button>
+          </>
+        ) : (
+          /* Normal toolbar */
+          <>
+            <Button size="sm" onClick={() => { setReplyTo(null); setComposeOpen(true) }}>
+              <PenSquare className="h-4 w-4" />
+              Compose
+            </Button>
+            <Button size="sm" variant="outline" onClick={handleSync} disabled={syncing}>
+              <RefreshCw className={cn("h-4 w-4", syncing && "animate-spin")} />
+              {syncing ? `Syncing... ${syncTimerText}` : "Sync"}
+            </Button>
+            <div className="relative flex-1 max-w-xs">
+              <Search className="absolute left-2.5 top-2 h-4 w-4 text-muted-foreground" />
+              <Input
+                placeholder="Search emails..."
+                value={search}
+                onChange={(e) => { setSearch(e.target.value); setPage(1) }}
+                className="h-8 pl-8 text-sm"
+              />
+            </div>
+          </>
+        )}
       </div>
+
+      {/* First sync warning */}
+      {gmailStatus && gmailStatus.total_emails === 0 && !syncing && (
+        <div className="border-b border-amber-200 bg-amber-50 px-4 py-2 text-sm dark:border-amber-800 dark:bg-amber-950">
+          <p className="font-medium text-amber-800 dark:text-amber-200">
+            No emails synced yet. Click Sync to fetch your emails from the last 15 days.
+          </p>
+          <p className="text-xs text-amber-700 dark:text-amber-300">
+            First sync may take 2-4 minutes depending on how many emails you have.
+          </p>
+        </div>
+      )}
 
       {/* Tabs */}
       <div className="flex gap-1 border-b border-border px-4">
@@ -246,7 +350,9 @@ export function EmailsPage() {
               <EmailList
                 emails={inboxData.items}
                 selectedId={selectedEmail?.id ?? null}
+                selectedIds={selectedIds}
                 onSelect={setSelectedEmail}
+                onToggleSelect={toggleSelect}
               />
               {inboxData.total > inboxData.size && (
                 <div className="flex items-center justify-between border-t border-border p-2">
