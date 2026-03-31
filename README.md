@@ -1,64 +1,82 @@
-# Job Application Tracker
+# HireTrackr
 
-A full-stack job application tracker with a Kanban board, Gmail integration, analytics dashboard, and Google OAuth authentication.
+A full-stack job search command center with a built-in email client, Kanban board, Gmail integration, analytics dashboard, and smart email classification.
+
+## Features
+
+- **Full Email Client** — Two-panel Gmail-like inbox with compose, reply, search, and batch operations
+- **Smart Email Classification** — Auto-detects job applications, interviews, rejections, and offers from your Gmail
+- **Kanban Board** — Drag-and-drop applications across stages (Saved, Applied, Screening, Interview, Offer, Rejected, Withdrawn)
+- **Auto-Create Applications** — Automatically creates tracked applications from LinkedIn "sent to" and ATS confirmation emails
+- **Interview Management** — Import interviews from emails with parsed meeting links, participants, date/time. Cards show "Join Meeting" button
+- **Rejection Detection** — Scans email bodies for rejection language, creates applications in Rejected stage
+- **Board Notifications** — Unified notification system: "Is this an interview?", "Interview passed — how did it go?", "Rejection detected"
+- **Analytics Dashboard** — Stats cards, stage funnel, application timeline, response rates, stage distribution charts
+- **Contact Management** — Track contacts per application with role, email, phone, LinkedIn
+- **Application Timeline** — Event log per application, auto-created on stage changes
+- **Email Trash** — Trash rejection emails directly from the board, per-application or bulk
+- **Dark Mode** — Full light/dark theme with glassmorphism UI
+- **Google OAuth** — Secure authentication with JWT access/refresh token rotation
 
 ## Tech Stack
 
 | Layer | Technology |
 |---|---|
-| Backend | Python, FastAPI, SQLModel, Alembic |
-| Frontend | React, TypeScript, Vite |
-| UI | Tailwind CSS v4, shadcn/ui |
+| Backend | Python 3.13, FastAPI, SQLModel, Alembic |
+| Frontend | React 19, TypeScript, Vite |
+| UI | Tailwind CSS v4, shadcn/ui, Glassmorphism, Plus Jakarta Sans |
 | Database | PostgreSQL 17 |
 | Auth | Google OAuth 2.0, JWT (access + refresh tokens) |
 | Drag & Drop | @dnd-kit |
 | Charts | Recharts |
 | State | TanStack Query v5, Zustand |
-| Testing | pytest (backend), Vitest (frontend) |
-
-## Features
-
-- **Kanban Board** — Drag-and-drop applications across stages (Saved, Applied, Screening, Interview, Offer, Rejected, Withdrawn)
-- **Application CRUD** — Track company, position, URL, location, salary, work model, notes
-- **Contact Management** — Link contacts to applications with role, email, phone, LinkedIn
-- **Application Timeline** — Event log per application (auto-created on stage changes)
-- **Gmail Integration** — Connect Gmail, sync job-related emails, auto-link to tracked applications
-- **Analytics Dashboard** — Stats cards, stage funnel, application timeline, response rates, stage distribution
-- **Google OAuth** — Secure authentication with JWT access/refresh token rotation
-- **Dark Mode** — Full light/dark theme support
+| Forms | react-hook-form, zod |
+| Testing | pytest (backend) |
+| Containerization | Docker, Docker Compose |
 
 ## Project Structure
 
 ```
-├── backend/             # FastAPI + SQLModel
+├── backend/                 # FastAPI + SQLModel
 │   ├── app/
-│   │   ├── models/      # SQLModel database models
-│   │   ├── schemas/     # Pydantic request/response schemas
-│   │   ├── routers/     # API route handlers
-│   │   ├── services/    # Business logic
-│   │   └── utils/       # JWT, Gmail queries
-│   ├── alembic/         # Database migrations
-│   └── tests/           # pytest unit tests
-├── frontend/            # React + Vite + TypeScript
+│   │   ├── models/          # SQLModel database models
+│   │   ├── schemas/         # Pydantic request/response schemas
+│   │   ├── routers/         # API route handlers
+│   │   ├── services/        # Business logic
+│   │   │   ├── gmail_service.py      # Gmail sync, send, reply, trash
+│   │   │   ├── email_parser.py       # Rules-based email classification
+│   │   │   ├── interview_extractor.py # Parse interview details from emails
+│   │   │   └── ...
+│   │   └── utils/
+│   ├── alembic/             # Database migrations
+│   └── tests/               # pytest tests
+├── frontend/                # React + Vite + TypeScript
 │   └── src/
-│       ├── api/         # Axios API client
-│       ├── hooks/       # TanStack Query hooks
-│       ├── components/  # UI components (kanban, forms, charts)
-│       ├── pages/       # Route pages
-│       └── stores/      # Zustand stores
-├── docker-compose.yml       # Dev: Postgres + backend + frontend
-├── docker-compose.prod.yml  # Prod: + nginx reverse proxy
-└── nginx/                   # Nginx config
+│       ├── api/             # Axios API client
+│       ├── hooks/           # TanStack Query hooks
+│       ├── components/
+│       │   ├── ui/          # shadcn/ui + glassmorphism components
+│       │   ├── layout/      # App shell, sidebar, header
+│       │   ├── kanban/      # Board, columns, cards
+│       │   ├── emails/      # Email list, detail, compose
+│       │   ├── analytics/   # Charts and stats
+│       │   └── ...
+│       ├── pages/           # Route pages
+│       └── stores/          # Zustand stores
+├── .github/workflows/       # GitHub Actions (frontend deploy)
+├── docker-compose.yml       # Dev: Postgres + backend
+├── render.yaml              # Render deployment config
+└── nginx/                   # Nginx config for production
 ```
 
-## Local Development Setup
+## Local Development
 
 ### Prerequisites
 
 - Python 3.12+
 - Node.js 20+
-- Docker & Docker Compose (for PostgreSQL)
-- Google Cloud Console project (for OAuth)
+- Docker (for PostgreSQL)
+- Google Cloud Console project (for OAuth + Gmail API)
 
 ### 1. Clone and install
 
@@ -83,15 +101,23 @@ cd ..
 cp .env.example .env
 ```
 
-Edit `.env` with your values. For Google OAuth:
-1. Go to [Google Cloud Console](https://console.cloud.google.com/)
-2. Create a project → APIs & Services → Credentials → OAuth 2.0 Client ID
-3. Set authorized redirect URI to `http://localhost:5173/auth/google/callback`
-4. Copy Client ID and Secret into `.env`
+Edit `backend/.env`:
+```
+DATABASE_URL=postgresql+asyncpg://postgres:postgres@localhost:5432/job_tracker
+JWT_ACCESS_SECRET=<random-string>
+JWT_REFRESH_SECRET=<random-string>
+GOOGLE_CLIENT_ID=<from-google-cloud-console>
+GOOGLE_CLIENT_SECRET=<from-google-cloud-console>
+GOOGLE_REDIRECT_URI=http://localhost:5173/auth/google/callback
+GMAIL_REDIRECT_URI=http://localhost:5173/settings/gmail/callback
+GMAIL_ENCRYPTION_KEY=<run: python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())">
+FRONTEND_URL=http://localhost:5173
+CORS_ORIGINS=["http://localhost:5173"]
+```
 
-For Gmail integration, generate an encryption key:
-```bash
-python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
+Edit `frontend/.env`:
+```
+VITE_GOOGLE_CLIENT_ID=<same-google-client-id>
 ```
 
 ### 3. Start PostgreSQL
@@ -100,76 +126,78 @@ python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().d
 docker compose up db -d
 ```
 
-### 4. Run database migrations
+### 4. Run migrations
 
 ```bash
 cd backend
-alembic revision --autogenerate -m "initial"
-alembic upgrade head
-cd ..
+python -m alembic upgrade head
 ```
 
-### 5. Start the backend
+### 5. Start the app
 
 ```bash
+# Terminal 1: Backend
 cd backend
-uvicorn app.main:app --reload --port 8000
-# for python users, put python -m in front of the command to launch uvicorn
-```
+python -m uvicorn app.main:app --reload --port 8000
 
-API docs available at http://localhost:8000/docs
-
-### 6. Start the frontend
-
-In a separate terminal:
-```bash
+# Terminal 2: Frontend
 cd frontend
 npm run dev
 ```
 
-App available at http://localhost:5173
+App: http://localhost:5173 | API docs: http://localhost:8000/docs
 
-### Running Tests
+### Google OAuth Setup
 
-```bash
-# Backend (37 tests)
-cd backend
-python -m pytest tests/ -v
+1. Go to [Google Cloud Console](https://console.cloud.google.com/)
+2. Create project → APIs & Services → Credentials → OAuth 2.0 Client ID
+3. Authorized JavaScript origins: `http://localhost:5173`
+4. Authorized redirect URIs:
+   - `http://localhost:5173/auth/google/callback`
+   - `http://localhost:5173/settings/gmail/callback`
+5. Enable Gmail API in APIs & Services → Library
 
-# Frontend type check
-cd frontend
-npx tsc -b
-```
+## Deployment
 
-## Production Deployment
+### Frontend → GitHub Pages
 
-```bash
-# Build and run with Docker Compose
-docker compose -f docker-compose.prod.yml up -d --build
-```
+The GitHub Actions workflow (`.github/workflows/deploy-frontend.yml`) auto-deploys on push to `main`.
 
-This starts PostgreSQL, the FastAPI backend (4 workers), a static nginx frontend, and an nginx reverse proxy on port 80.
+Set these in GitHub repo Settings → Variables → Actions:
+- `VITE_API_URL` = `https://your-backend.onrender.com/api/v1`
+- `VITE_GOOGLE_CLIENT_ID` = your Google Client ID
+
+### Backend → Render
+
+1. Connect repo to Render
+2. It detects `render.yaml` and creates the web service + Postgres
+3. Set environment variables in Render dashboard
 
 ## API Endpoints
 
-All endpoints prefixed with `/api/v1`. Auth required unless noted.
+60+ endpoints. Key ones:
 
 | Method | Path | Description |
 |---|---|---|
-| POST | `/auth/google` | Exchange Google code for tokens |
-| POST | `/auth/refresh` | Rotate refresh token |
-| GET | `/auth/me` | Current user |
+| POST | `/auth/google` | Google OAuth login |
 | GET | `/board` | Kanban board data |
 | PATCH | `/board/move` | Move card between stages |
 | GET/POST | `/applications` | List/create applications |
-| GET/PUT/DELETE | `/applications/:id` | Get/update/delete application |
-| GET/POST | `/contacts` | List/create contacts |
-| POST/DELETE | `/applications/:id/contacts/:cid` | Link/unlink contact |
-| GET/POST | `/applications/:id/timeline` | List/create timeline events |
-| POST | `/emails/connect-gmail` | Connect Gmail OAuth |
-| POST | `/emails/sync` | Sync emails from Gmail |
-| GET | `/emails/suggestions` | Auto-detected job email matches |
+| POST | `/emails/sync-all` | Sync all emails from last 15 days |
+| GET | `/emails/inbox` | Paginated inbox with filters |
+| GET | `/emails/{id}/body` | Fetch full email body |
+| POST | `/emails/compose` | Send email |
+| POST | `/emails/{id}/reply` | Reply to email |
+| POST | `/emails/batch` | Batch mark read/unread/trash |
+| GET | `/emails/pending-actions` | Board notifications |
+| POST | `/emails/import-as-interview` | Import email as interview |
+| POST | `/emails/confirm-rejection` | Confirm rejection |
 | GET | `/analytics/summary` | Dashboard stats |
 | GET | `/analytics/funnel` | Stage conversion funnel |
-| GET | `/analytics/timeline` | Applications over time |
-| GET | `/analytics/stage-distribution` | Current stage breakdown |
+
+## Running Tests
+
+```bash
+cd backend
+python -m pytest tests/ -v
+```

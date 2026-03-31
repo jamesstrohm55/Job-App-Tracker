@@ -32,7 +32,7 @@ export default function App() {
     <ErrorBoundary>
       <GoogleOAuthProvider clientId={GOOGLE_CLIENT_ID}>
         <QueryClientProvider client={queryClient}>
-          <BrowserRouter>
+          <BrowserRouter basename={import.meta.env.VITE_BASE_PATH || "/"}>
             <Routes>
               <Route path="/login" element={<LoginPageWrapper />} />
               <Route path="/*" element={<AppShellWrapper />} />
