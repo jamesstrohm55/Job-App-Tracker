@@ -19,7 +19,10 @@ export function GmailCallbackPage() {
       return
     }
 
-    connectGmail(code)
+    const codeVerifier = sessionStorage.getItem("gmail_code_verifier") || undefined
+    sessionStorage.removeItem("gmail_code_verifier")
+
+    connectGmail(code, codeVerifier)
       .then(() => {
         toast.success("Gmail connected successfully!")
         navigate("/settings")

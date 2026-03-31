@@ -1,7 +1,10 @@
+import logging
 import uuid
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
+
+logger = logging.getLogger(__name__)
 from pydantic import BaseModel
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -50,7 +53,8 @@ router = APIRouter(prefix="/emails", tags=["emails"])
 
 @router.get("/gmail/url")
 async def gmail_auth_url():
-    return {"url": get_gmail_auth_url()}
+    result = get_gmail_auth_url()
+    return result
 
 
 @router.post("/connect-gmail")
@@ -60,9 +64,10 @@ async def connect(
     db: AsyncSession = Depends(get_db),
 ):
     try:
-        account = await connect_gmail(body.code, user.id, db)
+        account = await connect_gmail(body.code, user.id, db, body.code_verifier)
         return {"ok": True, "email_address": account.email_address}
     except Exception as e:
+        logger.error("Gmail connection failed: %s", e, exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=f"Gmail connection failed: {e}",

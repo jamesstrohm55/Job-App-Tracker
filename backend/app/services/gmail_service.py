@@ -44,21 +44,25 @@ def _build_gmail_flow() -> Flow:
     return flow
 
 
-def get_gmail_auth_url() -> str:
+def get_gmail_auth_url() -> dict[str, str]:
     flow = _build_gmail_flow()
     auth_url, _ = flow.authorization_url(
         access_type="offline",
         include_granted_scopes="true",
         prompt="consent",
     )
-    return auth_url
+    return {"url": auth_url, "code_verifier": flow.code_verifier}
 
 
-async def connect_gmail(code: str, user_id: uuid.UUID, db: AsyncSession) -> EmailAccount:
+async def connect_gmail(
+    code: str, user_id: uuid.UUID, db: AsyncSession, code_verifier: str | None = None
+) -> EmailAccount:
     """Exchange Gmail OAuth code for credentials and store encrypted refresh token."""
     import os
     os.environ["OAUTHLIB_RELAX_TOKEN_SCOPE"] = "1"
     flow = _build_gmail_flow()
+    if code_verifier:
+        flow.code_verifier = code_verifier
     flow.fetch_token(code=code)
     credentials = flow.credentials
 

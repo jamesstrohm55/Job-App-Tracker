@@ -78,7 +78,7 @@ export function useEmailSuggestions() {
 export function useConnectGmail() {
   const queryClient = useQueryClient()
   return useMutation({
-    mutationFn: (code: string) => connectGmail(code),
+    mutationFn: ({ code, code_verifier }: { code: string; code_verifier?: string }) => connectGmail(code, code_verifier),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["gmail-status"] })
     },

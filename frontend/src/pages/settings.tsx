@@ -33,7 +33,8 @@ export function SettingsPage() {
 
   const handleConnectGmail = async () => {
     try {
-      const url = await getGmailAuthUrl()
+      const { url, code_verifier } = await getGmailAuthUrl()
+      sessionStorage.setItem("gmail_code_verifier", code_verifier)
       window.location.href = url
     } catch {
       alert("Failed to get Gmail auth URL. Check that Google credentials are configured.")

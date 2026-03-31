@@ -66,13 +66,13 @@ export interface GmailStatus {
   total_emails: number
 }
 
-export async function getGmailAuthUrl(): Promise<string> {
-  const { data } = await api.get<{ url: string }>("/emails/gmail/url")
-  return data.url
+export async function getGmailAuthUrl(): Promise<{ url: string; code_verifier: string }> {
+  const { data } = await api.get<{ url: string; code_verifier: string }>("/emails/gmail/url")
+  return data
 }
 
-export async function connectGmail(code: string): Promise<void> {
-  await api.post("/emails/connect-gmail", { code })
+export async function connectGmail(code: string, code_verifier?: string): Promise<void> {
+  await api.post("/emails/connect-gmail", { code, code_verifier })
 }
 
 export async function disconnectGmail(): Promise<void> {

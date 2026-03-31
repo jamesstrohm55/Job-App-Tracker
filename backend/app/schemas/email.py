@@ -6,6 +6,7 @@ from pydantic import BaseModel
 
 class GmailConnectRequest(BaseModel):
     code: str
+    code_verifier: str | None = None
 
 
 class EmailSyncResponse(BaseModel):
