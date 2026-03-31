@@ -1,8 +1,8 @@
-import { useEffect, useRef, useState, useCallback } from "react"
+import { useCallback, useEffect, useRef, useState } from "react"
 import { format } from "date-fns"
-import { Reply, Trash2, Link2, Mail } from "lucide-react"
-import { Button } from "@/components/ui/button"
+import { Link2, Mail, Reply, Trash2 } from "lucide-react"
 import type { InboxItem } from "@/api/emails"
+import { Button } from "@/components/ui/button"
 
 interface EmailDetailProps {
   email: InboxItem
@@ -15,8 +15,6 @@ interface EmailDetailProps {
 }
 
 function wrapHtmlForIframe(html: string, isDark: boolean): string {
-  // Always render email on a light background for readability
-  // This ensures emails are readable in both light and dark mode
   return `
     <!DOCTYPE html>
     <html>
@@ -32,14 +30,13 @@ function wrapHtmlForIframe(html: string, isDark: boolean): string {
           line-height: 1.5;
           word-wrap: break-word;
           overflow-wrap: break-word;
-          background-color: ${isDark ? "#1e1e2e" : "#ffffff"};
-          color: ${isDark ? "#e0e0e0" : "#1a1a1a"};
+          background-color: ${isDark ? "#1f2937" : "#ffffff"};
+          color: ${isDark ? "#f3f4f6" : "#111827"};
         }
         img { max-width: 100%; height: auto; }
-        a { color: ${isDark ? "#60a5fa" : "#2563eb"}; }
+        a { color: ${isDark ? "#7dd3fc" : "#0369a1"}; }
         table { max-width: 100% !important; }
         pre { white-space: pre-wrap; }
-        /* Force readable text on emails that set their own colors */
         * { max-width: 100% !important; }
       </style>
     </head>
@@ -75,7 +72,6 @@ export function EmailDetail({
   const iframeRef = useRef<HTMLIFrameElement>(null)
   const [iframeHeight, setIframeHeight] = useState(400)
 
-  // Listen for height messages from iframe
   const handleMessage = useCallback((event: MessageEvent) => {
     if (event.data?.type === "iframe-height" && typeof event.data.height === "number") {
       setIframeHeight(Math.max(event.data.height, 200))
@@ -87,15 +83,13 @@ export function EmailDetail({
     return () => window.removeEventListener("message", handleMessage)
   }, [handleMessage])
 
-  // Reset height when email changes
   useEffect(() => {
     setIframeHeight(400)
   }, [email.id])
 
   return (
-    <div className="flex h-full flex-col animate-slide-in-right">
-      {/* Header */}
-      <div className="border-b border-border p-4">
+    <div className="flex h-full flex-col bg-background-elevated animate-slide-in-right">
+      <div className="border-b border-border/80 bg-background-elevated px-5 py-4">
         <h2 className="text-lg font-semibold">{email.subject}</h2>
         <div className="mt-2 flex items-center justify-between">
           <div>
@@ -125,7 +119,7 @@ export function EmailDetail({
 
         {email.is_job_related && email.intent && (
           <div className="mt-2 flex items-center gap-2">
-            <span className="rounded bg-muted px-2 py-0.5 text-xs text-muted-foreground">
+            <span className="rounded-full bg-secondary px-2.5 py-1 text-xs text-muted-foreground">
               {email.intent.replace(/_/g, " ")}
             </span>
             {email.extracted_company && (
@@ -137,7 +131,6 @@ export function EmailDetail({
         )}
       </div>
 
-      {/* Body */}
       <div className="flex-1 overflow-y-auto">
         {bodyLoading ? (
           <div className="flex items-center justify-center py-20">
@@ -148,11 +141,11 @@ export function EmailDetail({
             ref={iframeRef}
             sandbox="allow-scripts allow-popups"
             srcDoc={wrapHtmlForIframe(bodyHtml, isDark)}
-            className="w-full border-0"
+            className="w-full border-0 bg-background-elevated"
             style={{ height: iframeHeight }}
           />
         ) : bodyText ? (
-          <pre className="whitespace-pre-wrap p-4 text-sm">{bodyText}</pre>
+          <pre className="whitespace-pre-wrap bg-background-elevated px-5 py-4 text-sm">{bodyText}</pre>
         ) : (
           <div className="flex items-center justify-center py-20">
             <div className="text-center">

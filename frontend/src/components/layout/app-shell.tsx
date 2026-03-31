@@ -14,17 +14,19 @@ export function AppShell({ user, onLogout }: AppShellProps) {
   const sidebarOpen = useUIStore((s) => s.sidebarOpen)
 
   return (
-    <div className="min-h-screen bg-background animate-fade-in">
+    <div className="app-grid min-h-screen bg-background animate-fade-in">
       <Sidebar />
       <div
         className={cn(
-          "transition-all duration-300",
+          "relative transition-all duration-300",
           sidebarOpen ? "ml-64" : "ml-16"
         )}
       >
         <Header user={user} onLogout={onLogout} />
-        <main className="p-6 page-enter">
-          <Outlet />
+        <main className="page-enter p-4 md:p-6">
+          <div className="mx-auto max-w-[1600px]">
+            <Outlet />
+          </div>
         </main>
       </div>
     </div>

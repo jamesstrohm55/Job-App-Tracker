@@ -1,6 +1,6 @@
 import { format } from "date-fns"
-import { cn } from "@/lib/utils"
 import type { InboxItem } from "@/api/emails"
+import { cn } from "@/lib/utils"
 
 const INTENT_BADGES: Record<string, { label: string; color: string }> = {
   application_confirmed: { label: "Applied", color: "bg-blue-100 text-blue-700 dark:bg-blue-900 dark:text-blue-300" },
@@ -37,7 +37,7 @@ export function EmailList({ emails, selectedId, selectedIds, onSelect, onToggleS
   }
 
   return (
-    <div className="divide-y divide-border">
+    <div className="divide-y divide-border/80 bg-background-elevated">
       {emails.map((email) => {
         const badge = email.intent ? INTENT_BADGES[email.intent] : null
         const isSelected = email.id === selectedId
@@ -47,26 +47,24 @@ export function EmailList({ emails, selectedId, selectedIds, onSelect, onToggleS
           <div
             key={email.id}
             className={cn(
-              "flex w-full items-start gap-2 p-3 text-left transition-all duration-200 ease-out hover:bg-accent/50",
-              isSelected && "bg-accent",
+              "flex w-full items-start gap-2 bg-background-elevated px-3 py-3 text-left transition-all duration-200 ease-out hover:bg-accent/55",
+              isSelected && "bg-accent/80",
               isChecked && "bg-primary/10",
-              !email.is_read && !isSelected && !isChecked && "bg-primary/5"
+              !email.is_read && !isSelected && !isChecked && "bg-sky-50 dark:bg-sky-950/25"
             )}
           >
-            {/* Checkbox */}
             <input
               type="checkbox"
               checked={isChecked}
               onChange={() => onToggleSelect(email.id)}
-              className="mt-2.5 h-3.5 w-3.5 shrink-0 rounded border-border accent-primary cursor-pointer"
+              className="mt-2.5 h-3.5 w-3.5 shrink-0 cursor-pointer rounded border-border accent-primary"
             />
 
-            {/* Clickable content */}
             <button
               onClick={() => onSelect(email)}
-              className="flex min-w-0 flex-1 items-start gap-3 text-left"
+              className="flex min-w-0 flex-1 cursor-pointer items-start gap-3 text-left"
             >
-              <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-muted text-xs font-medium">
+              <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-secondary text-xs font-medium">
                 {getSenderInitial(email.from_address)}
               </div>
 
@@ -84,9 +82,7 @@ export function EmailList({ emails, selectedId, selectedIds, onSelect, onToggleS
                 <p className={cn("truncate text-xs", !email.is_read ? "text-foreground" : "text-muted-foreground")}>
                   {email.subject}
                 </p>
-                <p className="truncate text-[11px] text-muted-foreground">
-                  {email.snippet}
-                </p>
+                <p className="truncate text-[11px] text-muted-foreground">{email.snippet}</p>
               </div>
 
               <div className="shrink-0 text-right">
@@ -94,7 +90,7 @@ export function EmailList({ emails, selectedId, selectedIds, onSelect, onToggleS
                   {email.received_at ? format(new Date(email.received_at), "MMM d") : ""}
                 </p>
                 {!email.is_read && (
-                  <div className="mt-1 ml-auto h-2 w-2 rounded-full bg-primary" />
+                  <div className="ml-auto mt-1 h-2 w-2 rounded-full bg-primary" />
                 )}
               </div>
             </button>

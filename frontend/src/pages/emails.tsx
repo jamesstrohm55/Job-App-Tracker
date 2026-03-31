@@ -1,26 +1,26 @@
-import { useState, useEffect, useRef } from "react"
-import { RefreshCw, Search, PenSquare, Mail, CheckSquare, Trash2, MailOpen, X } from "lucide-react"
-import { Button } from "@/components/ui/button"
-import { Input } from "@/components/ui/input"
-import { EmailList } from "@/components/emails/email-list"
-import { EmailDetail } from "@/components/emails/email-detail"
-import { ComposeDialog } from "@/components/emails/compose-dialog"
+import { useEffect, useRef, useState } from "react"
+import { useQueryClient } from "@tanstack/react-query"
+import { CheckSquare, Mail, MailOpen, PenSquare, RefreshCw, Search, Trash2, X } from "lucide-react"
 import {
-  getInbox,
-  getEmailBody,
-  syncAllEmails,
-  composeEmail,
-  replyToEmail,
-  trashEmail,
-  markEmailRead,
   batchEmailAction,
+  composeEmail,
+  getEmailBody,
+  getInbox,
+  markEmailRead,
+  replyToEmail,
+  syncAllEmails,
+  trashEmail,
   type InboxItem,
   type InboxResponse,
 } from "@/api/emails"
+import { ComposeDialog } from "@/components/emails/compose-dialog"
+import { EmailDetail } from "@/components/emails/email-detail"
+import { EmailList } from "@/components/emails/email-list"
+import { Button } from "@/components/ui/button"
+import { Input } from "@/components/ui/input"
 import { useGmailStatus } from "@/hooks/use-emails"
-import { toast } from "sonner"
 import { cn } from "@/lib/utils"
-import { useQueryClient } from "@tanstack/react-query"
+import { toast } from "sonner"
 
 const TABS = [
   { key: "inbox", label: "Inbox" },
@@ -43,29 +43,32 @@ export function EmailsPage() {
   const [syncing, setSyncing] = useState(false)
   const [syncElapsed, setSyncElapsed] = useState(0)
   const syncIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
+  const [selectedEmail, setSelectedEmail] = useState<InboxItem | null>(null)
+  const [bodyHtml, setBodyHtml] = useState<string | null>(null)
+  const [bodyText, setBodyText] = useState<string | null>(null)
+  const [bodyLoading, setBodyLoading] = useState(false)
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
+  const [batchLoading, setBatchLoading] = useState(false)
+  const [composeOpen, setComposeOpen] = useState(false)
+  const [composeSending, setComposeSending] = useState(false)
+  const [replyTo, setReplyTo] = useState<{ to: string; subject: string } | null>(null)
 
   useEffect(() => {
     if (syncing) {
       setSyncElapsed(0)
-      syncIntervalRef.current = setInterval(() => setSyncElapsed((t) => t + 1), 1000)
-    } else {
+      syncIntervalRef.current = setInterval(() => setSyncElapsed((time) => time + 1), 1000)
+    } else if (syncIntervalRef.current) {
+      clearInterval(syncIntervalRef.current)
+    }
+
+    return () => {
       if (syncIntervalRef.current) clearInterval(syncIntervalRef.current)
     }
-    return () => { if (syncIntervalRef.current) clearInterval(syncIntervalRef.current) }
   }, [syncing])
 
   const syncTimerText = syncElapsed >= 60
     ? `${Math.floor(syncElapsed / 60)}m ${syncElapsed % 60}s`
     : `${syncElapsed}s`
-
-  const [selectedEmail, setSelectedEmail] = useState<InboxItem | null>(null)
-  const [bodyHtml, setBodyHtml] = useState<string | null>(null)
-  const [bodyText, setBodyText] = useState<string | null>(null)
-  const [bodyLoading, setBodyLoading] = useState(false)
-
-  // Batch selection
-  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
-  const [batchLoading, setBatchLoading] = useState(false)
 
   const toggleSelect = (id: string) => {
     setSelectedIds((prev) => {
@@ -81,7 +84,7 @@ export function EmailsPage() {
     if (selectedIds.size === inboxData.items.length) {
       setSelectedIds(new Set())
     } else {
-      setSelectedIds(new Set(inboxData.items.map((e) => e.id)))
+      setSelectedIds(new Set(inboxData.items.map((email) => email.id)))
     }
   }
 
@@ -92,12 +95,14 @@ export function EmailsPage() {
       const result = await batchEmailAction(Array.from(selectedIds), action)
       toast.success(`${result.affected} email(s) updated`)
       setSelectedIds(new Set())
-      // Refresh inbox
       const params: Record<string, string | number> = { page, size: 50 }
       if (activeTab === "inbox") params.label = "inbox"
       else if (activeTab === "job") params.label = "job"
       else if (activeTab === "sent") params.label = "sent"
-      else { params.label = "all"; params.category = activeTab }
+      else {
+        params.label = "all"
+        params.category = activeTab
+      }
       if (search) params.search = search
       getInbox(params as Parameters<typeof getInbox>[0]).then(setInboxData)
     } catch {
@@ -107,24 +112,15 @@ export function EmailsPage() {
     }
   }
 
-  const [composeOpen, setComposeOpen] = useState(false)
-  const [composeSending, setComposeSending] = useState(false)
-  const [replyTo, setReplyTo] = useState<{ to: string; subject: string } | null>(null)
-
-  // Fetch inbox
   useEffect(() => {
     if (!gmailStatus?.connected) return
     setLoading(true)
     const params: Record<string, string | number> = { page, size: 50 }
 
-    if (activeTab === "inbox") {
-      params.label = "inbox"
-    } else if (activeTab === "job") {
-      params.label = "job"
-    } else if (activeTab === "sent") {
-      params.label = "sent"
-    } else {
-      // Category filter (application_confirmed, interview, rejection)
+    if (activeTab === "inbox") params.label = "inbox"
+    else if (activeTab === "job") params.label = "job"
+    else if (activeTab === "sent") params.label = "sent"
+    else {
       params.label = "all"
       params.category = activeTab
     }
@@ -137,18 +133,17 @@ export function EmailsPage() {
       .finally(() => setLoading(false))
   }, [activeTab, page, search, gmailStatus?.connected])
 
-  // Fetch body when email selected
   useEffect(() => {
     if (!selectedEmail) {
       setBodyHtml(null)
       setBodyText(null)
       return
     }
+
     setBodyLoading(true)
     setBodyHtml(null)
     setBodyText(null)
 
-    // Mark as read
     if (!selectedEmail.is_read) {
       markEmailRead(selectedEmail.id).catch(() => {})
       selectedEmail.is_read = true
@@ -168,17 +163,18 @@ export function EmailsPage() {
     syncAllEmails()
       .then((result) => {
         toast.success(`Synced ${result.new_emails} emails (${result.sync_duration_seconds}s)`)
-        // Refresh inbox
         setPage(1)
         queryClient.invalidateQueries({ queryKey: ["pending-actions"] })
         queryClient.invalidateQueries({ queryKey: ["board"] })
         queryClient.invalidateQueries({ queryKey: ["applications"] })
-        // Re-fetch current tab
         const params: Record<string, string | number> = { page: 1, size: 50 }
         if (activeTab === "inbox") params.label = "inbox"
         else if (activeTab === "job") params.label = "job"
         else if (activeTab === "sent") params.label = "sent"
-        else { params.label = "all"; params.category = activeTab }
+        else {
+          params.label = "all"
+          params.category = activeTab
+        }
         if (search) params.search = search
         getInbox(params as Parameters<typeof getInbox>[0]).then(setInboxData)
       })
@@ -226,11 +222,10 @@ export function EmailsPage() {
       .then(() => {
         toast.success("Email trashed")
         setSelectedEmail(null)
-        // Remove from current list
         if (inboxData) {
           setInboxData({
             ...inboxData,
-            items: inboxData.items.filter((e) => e.id !== selectedEmail.id),
+            items: inboxData.items.filter((email) => email.id !== selectedEmail.id),
             total: inboxData.total - 1,
           })
         }
@@ -242,7 +237,7 @@ export function EmailsPage() {
     return (
       <div className="space-y-4">
         <h1 className="text-2xl font-bold tracking-tight">Email</h1>
-        <div className="flex flex-col items-center justify-center py-20 gap-3">
+        <div className="flex flex-col items-center justify-center gap-3 py-20">
           <Mail className="h-12 w-12 text-muted-foreground" />
           <p className="text-muted-foreground">Connect Gmail in Settings to use the email client.</p>
           <Button variant="outline" onClick={() => (window.location.href = "/settings")}>
@@ -254,11 +249,9 @@ export function EmailsPage() {
   }
 
   return (
-    <div className="flex h-[calc(100vh-7.5rem)] flex-col -mx-6 -mb-6">
-      {/* Toolbar */}
-      <div className="flex items-center gap-2 border-b border-border px-4 py-2">
+    <div className="surface-panel flex h-[calc(100vh-7.5rem)] flex-col overflow-hidden rounded-[2rem]">
+      <div className="flex items-center gap-2 border-b border-border/80 bg-background-elevated px-4 py-3">
         {selectedIds.size > 0 ? (
-          /* Batch action toolbar */
           <>
             <Button size="sm" variant="ghost" onClick={() => setSelectedIds(new Set())}>
               <X className="h-4 w-4" />
@@ -277,14 +270,18 @@ export function EmailsPage() {
               <Mail className="h-4 w-4" />
               Mark Unread
             </Button>
-            <Button size="sm" variant="outline" className="border-red-300 text-red-700 hover:bg-red-50 dark:border-red-800 dark:text-red-400"
-              onClick={() => handleBatch("trash")} disabled={batchLoading}>
+            <Button
+              size="sm"
+              variant="outline"
+              className="border-red-300 text-red-700 hover:bg-red-50 dark:border-red-800 dark:text-red-400"
+              onClick={() => handleBatch("trash")}
+              disabled={batchLoading}
+            >
               <Trash2 className="h-4 w-4" />
               Trash
             </Button>
           </>
         ) : (
-          /* Normal toolbar */
           <>
             <Button size="sm" onClick={() => { setReplyTo(null); setComposeOpen(true) }}>
               <PenSquare className="h-4 w-4" />
@@ -294,22 +291,24 @@ export function EmailsPage() {
               <RefreshCw className={cn("h-4 w-4", syncing && "animate-spin")} />
               {syncing ? `Syncing... ${syncTimerText}` : "Sync"}
             </Button>
-            <div className="relative flex-1 max-w-xs">
-              <Search className="absolute left-2.5 top-2 h-4 w-4 text-muted-foreground" />
+            <div className="relative max-w-xs flex-1">
+              <Search className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
               <Input
                 placeholder="Search emails..."
                 value={search}
-                onChange={(e) => { setSearch(e.target.value); setPage(1) }}
-                className="h-8 pl-8 text-sm"
+                onChange={(e) => {
+                  setSearch(e.target.value)
+                  setPage(1)
+                }}
+                className="h-10 pl-9 text-sm"
               />
             </div>
           </>
         )}
       </div>
 
-      {/* First sync warning */}
       {gmailStatus && gmailStatus.total_emails === 0 && !syncing && (
-        <div className="border-b border-amber-200 bg-amber-50 px-4 py-2 text-sm dark:border-amber-800 dark:bg-amber-950">
+        <div className="border-b border-amber-200 bg-amber-50 px-4 py-3 text-sm dark:border-amber-800 dark:bg-amber-950">
           <p className="font-medium text-amber-800 dark:text-amber-200">
             No emails synced yet. Click Sync to fetch your emails from the last 15 days.
           </p>
@@ -319,14 +318,17 @@ export function EmailsPage() {
         </div>
       )}
 
-      {/* Tabs */}
-      <div className="flex gap-1 border-b border-border px-4">
+      <div className="flex gap-1 border-b border-border/80 bg-background-elevated px-4">
         {TABS.map((tab) => (
           <button
             key={tab.key}
-            onClick={() => { setActiveTab(tab.key); setPage(1); setSelectedEmail(null) }}
+            onClick={() => {
+              setActiveTab(tab.key)
+              setPage(1)
+              setSelectedEmail(null)
+            }}
             className={cn(
-              "border-b-2 px-3 py-1.5 text-xs font-medium transition-colors",
+              "cursor-pointer border-b-2 px-3 py-2 text-xs font-medium transition-colors",
               activeTab === tab.key
                 ? "border-primary text-foreground"
                 : "border-transparent text-muted-foreground hover:text-foreground"
@@ -337,10 +339,8 @@ export function EmailsPage() {
         ))}
       </div>
 
-      {/* Two-panel layout */}
-      <div className="flex flex-1 overflow-hidden">
-        {/* Email list */}
-        <div className="w-96 shrink-0 overflow-y-auto border-r border-border">
+      <div className="flex flex-1 overflow-hidden bg-background-elevated/96">
+        <div className="w-96 shrink-0 overflow-y-auto border-r border-border/80 bg-background-elevated">
           {loading ? (
             <div className="flex items-center justify-center py-20">
               <p className="text-sm text-muted-foreground">Loading...</p>
@@ -355,15 +355,17 @@ export function EmailsPage() {
                 onToggleSelect={toggleSelect}
               />
               {inboxData.total > inboxData.size && (
-                <div className="flex items-center justify-between border-t border-border p-2">
+                <div className="flex items-center justify-between border-t border-border/80 bg-background-elevated px-3 py-2">
                   <span className="text-xs text-muted-foreground">
                     {(page - 1) * inboxData.size + 1}-{Math.min(page * inboxData.size, inboxData.total)} of {inboxData.total}
                   </span>
                   <div className="flex gap-1">
-                    <Button size="sm" variant="ghost" disabled={page <= 1}
-                      onClick={() => setPage((p) => p - 1)} className="h-6 text-xs">Prev</Button>
-                    <Button size="sm" variant="ghost" disabled={page * inboxData.size >= inboxData.total}
-                      onClick={() => setPage((p) => p + 1)} className="h-6 text-xs">Next</Button>
+                    <Button size="sm" variant="ghost" disabled={page <= 1} onClick={() => setPage((current) => current - 1)} className="h-6 text-xs">
+                      Prev
+                    </Button>
+                    <Button size="sm" variant="ghost" disabled={page * inboxData.size >= inboxData.total} onClick={() => setPage((current) => current + 1)} className="h-6 text-xs">
+                      Next
+                    </Button>
                   </div>
                 </div>
               )}
@@ -371,8 +373,7 @@ export function EmailsPage() {
           ) : null}
         </div>
 
-        {/* Reading pane */}
-        <div className="flex-1 overflow-hidden">
+        <div className="flex-1 overflow-hidden bg-background-elevated">
           {selectedEmail ? (
             <EmailDetail
               email={selectedEmail}
@@ -384,7 +385,7 @@ export function EmailsPage() {
               onLink={() => {}}
             />
           ) : (
-            <div className="flex h-full items-center justify-center">
+            <div className="flex h-full items-center justify-center bg-background-elevated">
               <div className="text-center">
                 <Mail className="mx-auto h-12 w-12 text-muted-foreground/30" />
                 <p className="mt-2 text-sm text-muted-foreground">Select an email to read</p>
@@ -394,7 +395,6 @@ export function EmailsPage() {
         </div>
       </div>
 
-      {/* Compose dialog */}
       <ComposeDialog
         open={composeOpen}
         onOpenChange={setComposeOpen}
