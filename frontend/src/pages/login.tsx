@@ -33,8 +33,8 @@ export function LoginPage({ onGoogleLogin }: LoginPageProps) {
           </p>
         </div>
 
-        {/* Glass card — always dark glass */}
-        <div className="animate-fade-in-up-delay-2 rounded-2xl border border-white/10 bg-black/40 p-8 shadow-2xl shadow-blue-500/10 backdrop-blur-2xl">
+        {/* Glass card — T.RICKS inspired heavy blur + noise */}
+        <div className="glass-noise animate-fade-in-up-delay-2 relative overflow-hidden rounded-3xl border border-white/[0.12] bg-white/[0.06] p-8 shadow-[0_8px_32px_rgba(0,0,0,0.4)] backdrop-blur-[2em]">
           {/* Feature pills */}
           <div className="mb-6 flex flex-wrap items-center justify-center gap-2">
             <span className="flex items-center gap-1.5 rounded-full border border-blue-800/50 bg-blue-950/60 px-3 py-1 text-xs font-medium text-blue-300 backdrop-blur-sm">

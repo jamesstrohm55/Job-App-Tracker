@@ -265,26 +265,55 @@ def _looks_like_person_name(name: str) -> bool:
     return False
 
 
-def extract_position_from_subject(subject: str) -> str | None:
-    """Try to extract a job position/title from the subject line."""
-    patterns = [
-        # "Company - Software Engineer" or "Software Engineer - Company"
-        r"[-–—]\s*([A-Z][A-Za-z\s/()]+(?:Engineer|Developer|Designer|Manager|Analyst|Scientist|Lead|Architect|Director|Intern|Associate)(?:\s*[IVX]{0,3})?)",
-        # "Your application for Software Engineer"
+def extract_position_from_subject(subject: str, snippet: str = "") -> str | None:
+    """Extract job position/title from subject line and snippet. Works for any role."""
+    # Try subject first
+    subject_patterns = [
+        # "Your application to [Position] at [Company]"
+        r"application to\s+(.+?)\s+at\s+",
+        # "Your application for [Position]"
         r"application for\s+(?:the\s+)?(.+?)(?:\s+at\s|\s+with\s|\s*[-–—]|\s*$)",
-        # "Interview for Software Engineer"
+        # "Interview for [Position]"
         r"interview.*?for\s+(?:the\s+)?(.+?)(?:\s+(?:at|with)\s|\s*[-–—]|\s*$)",
-        # "Role: Software Engineer"
-        r"(?:role|position):\s*(.+?)(?:\s*[-–—]|\s*$)",
-        # "FS Engineer" or "Full Stack Engineer" etc standalone
-        r"[-–—]\s*((?:FS|Full[- ]Stack|Front[- ]End|Back[- ]End|Staff|Senior|Junior|Lead|Principal)\s+(?:Engineer|Developer|Architect))",
+        # "[Company] - [Position]" or "[Position] - [Company]"
+        r"[-–—]\s+(.+?)(?:\s*[-–—]|\s*@|\s*$)",
+        # "Role: [Position]" or "Position: [Position]"
+        r"(?:role|position|job):\s*(.+?)(?:\s*[-–—]|\s*$)",
+        # "[Position] role at [Company]"
+        r"(.+?)\s+role\s+at\s+",
     ]
-    for pattern in patterns:
+    for pattern in subject_patterns:
         match = re.search(pattern, subject, re.IGNORECASE)
         if match:
-            position = match.group(1).strip().rstrip(".,;:")
-            if 3 < len(position) < 80:
+            position = match.group(1).strip().rstrip(".,;:|")
+            if 3 < len(position) < 80 and position.lower() not in ("re", "fwd", "fw"):
                 return position
+
+    # Fallback: try snippet/body
+    if snippet:
+        snippet_patterns = [
+            # "position of [Position] at [Company]"
+            r"position of\s+(.+?)\s+(?:at|in)\s+",
+            # "the [Position] position at [Company]"
+            r"the\s+(.+?)\s+position\s+(?:at|in|with)\s+",
+            # "the [Position] role at [Company]"
+            r"the\s+(.+?)\s+role\s+(?:at|in|with)\s+",
+            # "applied for [Position]"
+            r"applied for\s+(?:the\s+)?(.+?)(?:\s+at\s|\s+position|\.|,)",
+            # "interest in the [Position]"
+            r"interest in\s+(?:the\s+)?(.+?)(?:\s+position|\s+role|\s+at\s|\.|,)",
+            # "regarding the [Position]"
+            r"regarding\s+(?:the\s+)?(.+?)(?:\s+position|\s+role|\s+at\s|\.|,)",
+            # "application for the [Position]"
+            r"application for\s+(?:the\s+)?(.+?)(?:\s+at\s|\s+position|\.|,)",
+        ]
+        for pattern in snippet_patterns:
+            match = re.search(pattern, snippet, re.IGNORECASE)
+            if match:
+                position = match.group(1).strip().rstrip(".,;:|")
+                if 3 < len(position) < 80:
+                    return position
+
     return None
 
 
@@ -345,7 +374,7 @@ def classify_email(
     has_keywords = has_job_keywords(subject, snippet)
     matched_company = match_company(from_address, subject, snippet, tracked_companies)
     extracted_company = extract_company_from_email(from_address, subject, snippet)
-    extracted_position = extract_position_from_subject(subject)
+    extracted_position = extract_position_from_subject(subject, snippet)
     intent = detect_intent(subject, snippet) if (is_ats or has_keywords) else None
 
     base = {

@@ -11,7 +11,7 @@ export function Header({ user, onLogout }: HeaderProps) {
   const { sidebarOpen, toggleSidebar, theme, toggleTheme } = useUIStore()
 
   return (
-    <header className="sticky top-0 z-30 flex h-14 items-center justify-between border-b border-border/50 bg-background/80 px-4 backdrop-blur-xl">
+    <header className="sticky top-0 z-30 flex h-14 items-center justify-between border-b border-border/30 bg-background/80 px-4 backdrop-blur-[2em]">
       <button
         onClick={toggleSidebar}
         className="rounded-md p-2 text-muted-foreground transition-all duration-200 ease-out hover:bg-accent hover:text-accent-foreground active:scale-95"

@@ -26,8 +26,8 @@ export function KanbanColumn({
   return (
     <div
       className={cn(
-        "flex w-56 shrink-0 flex-col rounded-xl border border-border/50 bg-muted/30 backdrop-blur-sm transition-all duration-200",
-        isOver && "border-primary/50 bg-muted/60 shadow-lg"
+        "flex w-56 shrink-0 flex-col rounded-2xl border border-border/30 bg-muted/20 backdrop-blur-lg transition-all duration-200",
+        isOver && "border-primary/40 bg-muted/50 shadow-xl shadow-primary/5"
       )}
     >
       {/* Header */}

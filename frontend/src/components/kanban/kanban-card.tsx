@@ -178,8 +178,8 @@ export function KanbanCard({ application, onClick, onTrashEmails }: KanbanCardPr
       ref={setNodeRef}
       style={style}
       className={cn(
-        "group flex items-center gap-2 cursor-pointer rounded-lg border border-border/50 bg-card/80 backdrop-blur-sm px-2 py-1.5 shadow-sm transition-all duration-200 ease-out hover:shadow-md hover:-translate-y-0.5",
-        isDragging && "opacity-50 shadow-lg"
+        "group flex items-center gap-2 cursor-pointer rounded-xl border border-border/30 bg-card/70 backdrop-blur-lg px-2.5 py-2 shadow-sm transition-all duration-200 ease-out hover:shadow-lg hover:-translate-y-0.5 hover:bg-card/90",
+        isDragging && "opacity-50 shadow-xl scale-105"
       )}
       onClick={onClick}
     >

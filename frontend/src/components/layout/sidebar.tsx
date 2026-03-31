@@ -25,7 +25,7 @@ export function Sidebar() {
   return (
     <aside
       className={cn(
-        "fixed left-0 top-0 z-40 h-screen border-r border-sidebar-border/50 bg-sidebar/95 backdrop-blur-xl transition-all duration-300",
+        "fixed left-0 top-0 z-40 h-screen border-r border-sidebar-border/30 bg-sidebar/90 backdrop-blur-[2em] transition-all duration-300",
         sidebarOpen ? "w-64" : "w-16"
       )}
     >
