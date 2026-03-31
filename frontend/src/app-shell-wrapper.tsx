@@ -40,7 +40,8 @@ export function AppShellWrapper() {
       const refreshToken = localStorage.getItem("refresh_token")
       if (refreshToken) {
         try {
-          const { data } = await axios.post<TokenResponse>("/api/v1/auth/refresh", {
+          const apiBase = import.meta.env.VITE_API_URL || "/api/v1"
+          const { data } = await axios.post<TokenResponse>(`${apiBase}/auth/refresh`, {
             refresh_token: refreshToken,
           })
           setAccessToken(data.access_token)
@@ -82,6 +83,24 @@ export function AppShellWrapper() {
     }
   }, [loading, user])
 
+  // Gmail callback must render as soon as session is restored (skip splash animation)
+  const isGmailCallback = window.location.pathname.includes("/settings/gmail/callback")
+  if (isGmailCallback) {
+    if (loading) {
+      return (
+        <div className="flex min-h-screen items-center justify-center bg-background">
+          <p className="text-muted-foreground">Restoring session...</p>
+        </div>
+      )
+    }
+    return (
+      <Routes>
+        <Route path="settings/gmail/callback" element={<GmailCallbackPage />} />
+        <Route path="*" element={<GmailCallbackPage />} />
+      </Routes>
+    )
+  }
+
   if (loading || (!showApp && user)) {
     return (
       <div className={`flex min-h-screen items-center justify-center bg-background transition-opacity duration-300 ${splashExiting ? "opacity-0" : "opacity-100"}`}>
@@ -120,7 +139,6 @@ export function AppShellWrapper() {
         <Route path="emails" element={<EmailsPage />} />
         <Route path="dashboard" element={<DashboardPage />} />
         <Route path="settings" element={<SettingsPage />} />
-        <Route path="settings/gmail/callback" element={<GmailCallbackPage />} />
         <Route path="*" element={<Navigate to="/board" replace />} />
       </Route>
     </Routes>

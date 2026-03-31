@@ -71,12 +71,13 @@ api.interceptors.response.use(
     const refreshToken = localStorage.getItem("refresh_token")
     if (!refreshToken) {
       isRefreshing = false
-      window.location.href = "/login"
+      const basePath = import.meta.env.VITE_BASE_PATH || "/"
+      window.location.href = `${basePath}login`
       return Promise.reject(error)
     }
 
     try {
-      const { data } = await axios.post<TokenResponse>("/api/v1/auth/refresh", {
+      const { data } = await axios.post<TokenResponse>(`${API_BASE}/auth/refresh`, {
         refresh_token: refreshToken,
       })
 
@@ -91,7 +92,8 @@ api.interceptors.response.use(
       processQueue(refreshError, null)
       setAccessToken(null)
       localStorage.removeItem("refresh_token")
-      window.location.href = "/login"
+      const basePath = import.meta.env.VITE_BASE_PATH || "/"
+      window.location.href = `${basePath}login`
       return Promise.reject(refreshError)
     } finally {
       isRefreshing = false
