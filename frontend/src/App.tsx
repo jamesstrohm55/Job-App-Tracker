@@ -6,6 +6,8 @@ import { useEffect } from "react"
 import { ErrorBoundary } from "./components/ui/error-boundary"
 import { AppShellWrapper } from "./app-shell-wrapper"
 import { LoginPage } from "./pages/login"
+import { PrivacyPage } from "./pages/privacy"
+import { TermsPage } from "./pages/terms"
 import { useUIStore } from "./stores/ui-store"
 import { loginWithGoogle } from "./api/auth"
 import { setAccessToken } from "./api/client"
@@ -35,6 +37,8 @@ export default function App() {
           <BrowserRouter basename={import.meta.env.VITE_BASE_PATH || "/"}>
             <Routes>
               <Route path="/login" element={<LoginPageWrapper />} />
+              <Route path="/privacy" element={<PrivacyPage />} />
+              <Route path="/terms" element={<TermsPage />} />
               <Route path="/*" element={<AppShellWrapper />} />
             </Routes>
           </BrowserRouter>
