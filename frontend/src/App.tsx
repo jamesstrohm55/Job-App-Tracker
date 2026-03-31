@@ -5,6 +5,7 @@ import { Toaster, toast } from "sonner"
 import { useEffect } from "react"
 import { ErrorBoundary } from "./components/ui/error-boundary"
 import { AppShellWrapper } from "./app-shell-wrapper"
+import { HomePage } from "./pages/home"
 import { LoginPage } from "./pages/login"
 import { PrivacyPage } from "./pages/privacy"
 import { TermsPage } from "./pages/terms"
@@ -36,6 +37,8 @@ export default function App() {
         <QueryClientProvider client={queryClient}>
           <BrowserRouter basename={import.meta.env.VITE_BASE_PATH || "/"}>
             <Routes>
+              <Route path="/" element={<HomePage />} />
+              <Route path="/home" element={<HomePage />} />
               <Route path="/login" element={<LoginPageWrapper />} />
               <Route path="/privacy" element={<PrivacyPage />} />
               <Route path="/terms" element={<TermsPage />} />

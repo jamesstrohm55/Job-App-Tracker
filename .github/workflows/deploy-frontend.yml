@@ -38,7 +38,10 @@ jobs:
           VITE_BASE_PATH: ${{ vars.VITE_BASE_PATH || '/' }}
         run: npm run build
 
-      # SPA fallback — copy index.html to 404.html so client-side routing works
+      - name: Custom domain
+        if: ${{ vars.CUSTOM_DOMAIN != '' }}
+        run: echo "${{ vars.CUSTOM_DOMAIN }}" > frontend/dist/CNAME
+
       - name: SPA fallback
         run: cp frontend/dist/index.html frontend/dist/404.html
 

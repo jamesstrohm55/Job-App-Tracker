@@ -1,4 +1,5 @@
 import { GoogleLogin } from "@react-oauth/google"
+import { Link } from "react-router-dom"
 import { Briefcase, Mail, BarChart3, KanbanSquare } from "lucide-react"
 
 interface LoginPageProps {
@@ -67,10 +68,14 @@ export function LoginPage({ onGoogleLogin }: LoginPageProps) {
           </div>
         </div>
 
-        {/* Footer */}
-        <p className="animate-fade-in-up-delay-3 mt-6 text-center text-xs text-slate-500">
-          Built with FastAPI + React + Gmail API
-        </p>
+        <div className="animate-fade-in-up-delay-3 mt-6 space-y-3 text-center">
+          <p className="text-xs text-slate-500">Built with FastAPI + React + Gmail API</p>
+          <div className="flex items-center justify-center gap-4 text-xs text-slate-400">
+            <Link to="/home" className="hover:text-slate-200">Home</Link>
+            <Link to="/privacy" className="hover:text-slate-200">Privacy</Link>
+            <Link to="/terms" className="hover:text-slate-200">Terms</Link>
+          </div>
+        </div>
       </div>
     </div>
   )
