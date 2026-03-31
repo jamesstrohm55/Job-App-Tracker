@@ -24,6 +24,7 @@ dependencies = [
     "cryptography>=44.0.0",
     "thefuzz[speedup]>=0.22.0",
     "httpx>=0.28.0",
+    "python-dateutil>=2.9.0",
 ]
 
 [project.optional-dependencies]
